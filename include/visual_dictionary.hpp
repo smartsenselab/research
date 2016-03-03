@@ -13,13 +13,29 @@ namespace ccr
 		Kmeans
 	};
 
+	struct FeatureIndex
+	{
+		std::string path;
+		int rows;
+		int cols;
+		int index;
+
+		FeatureIndex(std::string p, int r, int c, int i)
+		{
+			path = p;
+			rows = r;
+			cols = c;
+			index = i;
+		}
+	};
+
 	class  VisualDictionary {
 
 	private:
 		int nCWs;					// Number of Codewords
 		VisualDictionaryMethod method;
 		cv::Mat_<float> dictionary;
-		cv::Mat_<float> data;
+		std::vector<FeatureIndex> data;
 		std::vector<std::string> labels;	/* optional labels associated with each feature vector */
 
 		// Return de distance between two Matrices
@@ -38,10 +54,10 @@ namespace ccr
 		void beforeProcess();
 
 		// Add feature vectors
-		void addFeatureVectors(const cv::Mat_<float> &data);
+		void addFeatureVectors(std::string &path);
 
 		// Add feature vectors with one label per vector
-		void addFeatureVectors(const cv::Mat_<float> &data, const std::vector<std::string> &labels);
+		void addFeatureVectors(std::vector<FeatureIndex> fi, std::vector<std::string> &labels);
 
 		// Function to return the dictionary
 		void buildDictionary();

@@ -27,30 +27,48 @@ namespace ccr
 	void VisualDictionary::beforeProcess() {
 
 		if (nCWs <= 0)
-			std::cerr << "Number of codewords must be positive!";
+			std::cerr << "Number of codewords must be positive!" << std::endl;
 		if (method != VisualDictionaryMethod::Random && method != VisualDictionaryMethod::Kmeans)
-			std::cerr << "Parameter 'method' has to be set Random or Kmeans";
+			std::cerr << "Parameter 'method' has to be set Random or Kmeans" << std::endl;
 	}
 
 	// function to return the dictionary
 	void VisualDictionary::buildDictionary() {
+		
+		if (data.size() == 0)
+		{
+			std::cerr << "Set data first" << std::endl;
+			exit(1);
+		}
 
 		std::vector<size_t> index;
-		cv::Mat_<float> cluster(nCWs, data.cols);
+		cv::Mat_<float> cluster(nCWs, data[0].cols);
 		cv::Mat label;
-
-		if (data.rows == 0)
-			std::cerr << "Set data first";
 
 		if (method == VisualDictionaryMethod::Random) {
 
 			// Generate a random permutation of BigMatrix.
-			index = GenerateRandomPermutation((size_t)data.rows, (size_t)nCWs);
+			index = GenerateRandomPermutation((size_t)data.size(), (size_t)nCWs);
 
 			// Creates the dictionary
 			for (int i = 0; i < nCWs; i++)
 			{
-				data.row((int)index[i]).copyTo(cluster.row(i));
+
+				cv::Mat feature;
+				cv::FileStorage storageFeat;
+				cv::FileNode node, n1;
+
+				//Loading feature
+				storageFeat.open(data[index[i]].path, cv::FileStorage::READ);
+				if (storageFeat.isOpened() == false)
+					std::cerr << "Invalid file storage " << (data[index[i]].path + "!") << std::endl;
+
+				node = storageFeat.root();
+				n1 = node["ActionRecognitionFeatures"];
+				n1["Features"] >> feature;
+				storageFeat.release();
+
+				feature.row(data[index[i]].index).copyTo(cluster.row(i));
 			}
 		}
 		else if (method == VisualDictionaryMethod::Kmeans) {
@@ -58,11 +76,12 @@ namespace ccr
 			cv::TermCriteria criteria(cv::TermCriteria::COUNT, 100, 0.001);
 
 			// Apply kmeans()
-			cv::kmeans(data, nCWs, label, criteria, 1, cv::KMEANS_RANDOM_CENTERS, cluster);
+			//cv::kmeans(data, nCWs, label, criteria, 1, cv::KMEANS_RANDOM_CENTERS, cluster);
+			// Está comentado pois teria que ler todas as features do disco e colcoar em uma Matriz data... não tem memória suficiente para subir todas
 		}
 
 		dictionary = cluster.clone();
-		data.release(); //data is no more needed
+		data.clear(); //data is no more needed
 	}
 
 	// compute bag
@@ -71,7 +90,7 @@ namespace ccr
 		float dist = FLT_MAX, aux, idx;
 
 		if (data.cols != dictionary.cols) {
-			std::cerr << "Data size and dictionary size doesn't match!\n";
+			std::cerr << "Data size and dictionary size doesn't match!" << std::endl;
 		}
 
 		for (int i = 0; i < dictionary.rows; i++) {
@@ -99,29 +118,48 @@ namespace ccr
 		return (dist / (dict.cols));
 	}
 
-	void VisualDictionary::addFeatureVectors(const cv::Mat_<float> &data) {
+	void VisualDictionary::addFeatureVectors(std::string &path) {
+		int rows, cols;
+		cv::FileStorage storageFeat;
+		cv::FileNode node, n1;
 
-		this->data.push_back(data);
+		//Loading feature
+		storageFeat.open(path, cv::FileStorage::READ);
+		if (storageFeat.isOpened() == false)
+			std::cerr << "Invalid file storage " << (path + "!") << std::endl;
+
+		node = storageFeat.root();
+		n1 = node["ActionRecognitionFeatures"];
+		node = n1["Features"];
+		node["rows"] >> rows;
+		node["cols"] >> cols;
+		storageFeat.release();
+
+		for (int i = 0; i < rows; i++)
+			this->data.push_back(FeatureIndex(path, rows, cols, i));
 	}
 
-	void VisualDictionary::addFeatureVectors(const cv::Mat_<float> &data, const std::vector<std::string> &labels) {
+	// Essa função deve mudar
+	void VisualDictionary::addFeatureVectors(std::vector<FeatureIndex> fi, std::vector<std::string> &labels) {
 		int i;
 
 		// check whether the number of feature vectors is equal to the number of labels
-		if (data.rows != (int)labels.size())
-			std::cerr << "Inconsistant number of labels and feature vectors (must be equal)";
+		if (fi.size() != labels.size())
+			std::cerr << "Inconsistant number of labels and feature vectors (must be equal)" << std::endl;
 
-		this->data.push_back(data);
-
-		for (i = 0; i < data.rows; i++)
+		for (i = 0; i < fi.size(); i++)
+		{
+			this->data.push_back(fi[i]);
 			this->labels.push_back(labels[i]);
+		}
+
 	}
 
 	// save dictionary
 	void VisualDictionary::save(cv::FileStorage &storage) {
 
 		if (storage.isOpened() == false)
-			std::cerr << "Invalid file storage!";
+			std::cerr << "Invalid file storage!" << std::endl;
 
 		storage << "Dictionary" << "{";
 		storage << "nCWs" << nCWs;

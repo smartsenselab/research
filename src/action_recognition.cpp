@@ -10,11 +10,17 @@ namespace ccr
 
 	ActionRecognition::~ActionRecognition() {
 		params.release();
+		featuresPath.clear();
 
 		if (this->desc != NULL)
 		{
 			delete this->desc;
 			desc = NULL;
+		}
+		if (this->dict != NULL)
+		{
+			delete this->dict;
+			dict = NULL;
 		}
 	}
 
@@ -69,6 +75,26 @@ namespace ccr
 		std::vector<int> vec = splitTemporalScales(tempS, ',');
 
 		desc = new ssig::OFCM(nBMag, nBAng, distMag, distAng, cubL, maxMag, logQ, static_cast<bool>(movF), vec);
+		
+
+		node = params["visualDictionayParams"];
+		int nCWs = node["nCWs"];
+		int method = node["method"];
+		VisualDictionaryMethod vdMethod;
+
+		switch (method)
+		{
+		case VisualDictionaryMethod::Random:
+			vdMethod = VisualDictionaryMethod::Random;
+			break;
+		case VisualDictionaryMethod::Kmeans:
+			vdMethod = VisualDictionaryMethod::Kmeans;
+			break;
+		default:
+			vdMethod = VisualDictionaryMethod::Random;
+		}
+
+		dict = new ccr::VisualDictionary(nCWs, vdMethod);
 	}
 
 	void ActionRecognition::extractFeatures()
@@ -89,6 +115,7 @@ namespace ccr
 			std::cout << "Extracting features from " << videoName;
 			
 			video.clear();
+			/*
 			loadVideoFrames(inode);
 			label = (*inode)["objID"].isNone() ? "" : (std::string)(*inode)["objID"];
 			std::cout << " .";
@@ -105,7 +132,7 @@ namespace ccr
 			std::cout << ".";
 			numExtractFeatures += output.rows;
 			desc->release();
-
+			*/
 			saveFeature(label, output, videoName);
 			std::cout << " OK" << std::endl;
 		}
@@ -120,7 +147,7 @@ namespace ccr
 		path = outputFold + "\\numFeatures" + protocol + ".yml";
 		storageNumFeat.open(path, cv::FileStorage::WRITE);
 		if (storageNumFeat.isOpened() == false)
-			std::cerr << "Invalid file storage!";
+			std::cerr << "Invalid file storage!" << std::endl;
 		storageNumFeat << "Features" << numExtractFeatures;
 
 		storageNumFeat.release();
@@ -130,6 +157,46 @@ namespace ccr
 		cuboids.clear();
 		delete desc;
 		desc = NULL;
+	}
+
+	void ActionRecognition::createDictionary()
+	{
+		cv::FileStorage storage;
+		std::string dictModelFile;
+
+		std::cout << "\n\nBuilding dictionary ";
+
+		params["dictionaryFile"] >> dictModelFile;
+
+		// Open modelFile
+		storage.open(dictModelFile, cv::FileStorage::WRITE);
+		if (storage.isOpened() == false)
+			std::cerr << "Invalid file storage!" << std::endl;
+
+		storage << "ActionRecognitionDictionary" << "{";
+
+		std::cout << ".";
+
+		if (featuresPath.size() == 0)
+			addDictFeaturesPathFromFeatOutput();
+		else
+		{
+			for (auto &path : featuresPath)
+				dict->addFeatureVectors(path);
+		}
+
+		std::cout << ".";
+
+		// Create dictionary 
+		dict->buildDictionary();
+		std::cout << ".";
+
+		// Save dictionary
+		dict->save(storage);
+		std::cout << " OK" << std::endl;
+		
+		featuresPath.clear();
+		storage.release();
 	}
 
 	void ActionRecognition::createCuboids()
@@ -161,7 +228,7 @@ namespace ccr
 		// check video loaded
 		capture.open(path);
 		if (!capture.isOpened())
-			std::cerr << "Error processing file. Can't read video " << path;
+			std::cerr << "Error processing file. Can't read video " << path << std::endl;
 
 		videoLength = static_cast<unsigned long>(capture.get(CV_CAP_PROP_FRAME_COUNT));
 		nSamples = (*inode)["nSamples"].isNone() ? 0 : (int)(*inode)["nSamples"];
@@ -176,7 +243,7 @@ namespace ccr
 			capture.set(CV_CAP_PROP_POS_FRAMES, frameStep);
 			capture.read((image));
 			if (image.empty())
-				std::cerr << "Error processing file. Can't read frame " << frameStep << "from video " << path;
+				std::cerr << "Error processing file. Can't read frame " << frameStep << "from video " << path << std::endl;
 			video.push_back(image.clone());
 		}
 
@@ -189,6 +256,7 @@ namespace ccr
 		{
 		case ClassificationProtocol::Train:
 			extractFeatures();
+			createDictionary();
 			break;
 			/*
 		case ClassificationProtocol::Test:
@@ -211,16 +279,50 @@ namespace ccr
 		std::string path;
 		// Open modelFile
 		path = getFileName(videoName, params);
-
+		/*
 		storage.open(path, cv::FileStorage::WRITE);
 		if (storage.isOpened() == false)
-			std::cerr << "Invalid file storage!";
+			std::cerr << "Invalid file storage!" << std::endl;
 
 		storage << "ActionRecognitionFeatures" << "{";
 		storage << "Label" << label;
 		storage << "Features" << features;
 
 		storage.release();
+		*/
+		featuresPath.push_back(path);
+	}
+
+	inline void ActionRecognition::addDictFeaturesPathFromFeatOutput()
+	{
+		DIR *dir = 0;
+		std::string path;
+
+		params["featureOutput"] >> path;
+		dir = opendir(path.c_str());
+
+		if (dir == 0) {
+			std::cerr << "Impossible to open directory." << std::endl;
+			exit(1);
+		}
+
+		struct dirent *featFile = 0;
+		while (featFile = readdir(dir))
+		{
+			std::string file = featFile->d_name;
+			//fazer verificação de AVI e JPG :-)
+			if (featFile->d_type == isFile)
+			{
+				cv::FileStorage storageFeat;
+
+				//Loading feature
+				storageFeat.open(path + file, cv::FileStorage::READ);
+				if (storageFeat.isOpened() == false)
+					std::cerr << "Invalid file storage " << (path + file + "!") << std::endl;
+
+				dict->addFeatureVectors(path + file);
+			}
+		}
 	}
 
 	std::string getFileName(std::string videoName, cv::FileStorage &params)
@@ -233,6 +335,7 @@ namespace ccr
 		//system((mkdir + outputFold).c_str());
 		path = outputFold + "\\" + videoName + ".yml";
 
+		/*
 		do
 		{
 			if (FILE *file = fopen(path.c_str(), "r"))
@@ -247,7 +350,7 @@ namespace ccr
 				fileExists = false;
 
 		} while (fileExists);
-
+		*/
 		return path;
 	}
 
