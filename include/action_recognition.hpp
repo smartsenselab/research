@@ -4,11 +4,14 @@
 
 #include <string>
 #include <iomanip>
+#include <thread>
+#include <numeric>
 #include <opencv2\opencv.hpp>
 
 #include "descriptors/descriptor_temporal.hpp"
 #include "descriptors/ofcm_features.hpp"
 #include "visual_dictionary.hpp"
+#include "svm_multiclass.hpp"
 
 #include <dirent.h>
 
@@ -23,7 +26,6 @@ namespace ccr
 	{
 		Train,
 		Test,
-		TrainTest,
 		LeaveOneOut
 	};
 
@@ -37,14 +39,17 @@ namespace ccr
 	private:
 		ClassificationProtocol classificationProtocol;
 		
-		long numExtractFeatures;
+		//long numExtractFeatures;
 		std::string videosYMLPath;
+		std::string outputFile;
+		SamplingSetup samplingSetup;
 		std::vector<cv::Mat> video;
 		std::vector<ssig::Cube> cuboids;
-		std::vector<std::string> featuresPath;
-		SamplingSetup samplingSetup;
+		std::vector<FeatureIndex> featuresProperties;
+		std::map<std::string, std::vector<cv::Mat>> mapLabelToBoW;
 		ssig::DescriptorTemporal *desc;
 		ccr::VisualDictionary *dict;
+		ccr::Classification *classifier;
 
 	public:
 
@@ -56,12 +61,21 @@ namespace ccr
 		void beforeProcess();
 		void extractFeatures();
 		void createDictionary();
+		void extractBagOfWords();
+		void learnClassificationModel();
+		void classification();
+		void loadDictionary();
+		void loadClassifierModel();
+		void createBoW(cv::Mat bagOfWords, std::string featurePath);
 
 		void loadVideoFrames(cv::FileNodeIterator &inode);
 		void createCuboids();
 		void saveFeature(std::string label, cv::Mat &features, std::string videoName);
+		std::vector<std::string> retrieveClassIds();
+		void clearNoLongerUseful();
 
-		inline void addDictFeaturesPathFromFeatOutput();
+		inline void fillFeaturesProperties();
+		inline void generateOutput(int nLabels, cv::Mat_<float> confusionMat, std::vector<float> **confusionMatScores);
 
 	};
 
@@ -73,6 +87,9 @@ namespace ccr
 	std::vector<std::string> splitString(std::string str, char delimiter);
 	std::vector<int> splitTemporalScales(std::string str, char delimiter);
 	std::string getFileName(std::string videoName, cv::FileStorage &params);
+	double meanAccuracy(cv::Mat_<float> list);
+	double stdDeviation(cv::Mat_<float> list, double mean);
+	float averagePrecision(int label, int numTp, int numFn, std::map<int, std::vector<float>> TPScores, std::map<int, std::vector<float>> FPScores);
 }
 
 #endif

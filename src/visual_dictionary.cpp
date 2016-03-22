@@ -43,7 +43,6 @@ namespace ccr
 
 		std::vector<size_t> index;
 		cv::Mat_<float> cluster(nCWs, data[0].cols);
-		cv::Mat label;
 
 		if (method == VisualDictionaryMethod::Random) {
 
@@ -85,7 +84,7 @@ namespace ccr
 	}
 
 	// compute bag
-	void VisualDictionary::computeBag(cv::Mat_<float> &data, cv::Mat_<float> &bag) {
+	void VisualDictionary::computeBag(cv::Mat &data, cv::Mat &bag) {
 
 		float dist = FLT_MAX, aux, idx;
 
@@ -106,7 +105,7 @@ namespace ccr
 		bag.push_back(idx);
 	}
 
-	float VisualDictionary::distance(cv::Mat_<float> dict, cv::Mat_<float> data) {
+	float VisualDictionary::distance(cv::Mat dict, cv::Mat data) {
 
 		// Calculate distance
 		float dist = 0;
@@ -118,25 +117,10 @@ namespace ccr
 		return (dist / (dict.cols));
 	}
 
-	void VisualDictionary::addFeatureVectors(std::string &path) {
-		int rows, cols;
-		cv::FileStorage storageFeat;
-		cv::FileNode node, n1;
+	void VisualDictionary::addFeatureVectors(FeatureIndex &p) {
 
-		//Loading feature
-		storageFeat.open(path, cv::FileStorage::READ);
-		if (storageFeat.isOpened() == false)
-			std::cerr << "Invalid file storage " << (path + "!") << std::endl;
-
-		node = storageFeat.root();
-		n1 = node["ActionRecognitionFeatures"];
-		node = n1["Features"];
-		node["rows"] >> rows;
-		node["cols"] >> cols;
-		storageFeat.release();
-
-		for (int i = 0; i < rows; i++)
-			this->data.push_back(FeatureIndex(path, rows, cols, i));
+		for (int i = 0; i < p.rows; i++)
+			this->data.push_back(FeatureIndex(p.path, p.label, p.rows, p.cols, i));
 	}
 
 	// Essa função deve mudar
@@ -176,6 +160,8 @@ namespace ccr
 		n["nCWs"] >> nCWs;
 		n["dict"] >> dictionary;
 	}
+
+	int VisualDictionary::getnCWs() { return nCWs; }
 
 	std::vector<size_t> GenerateRandomPermutation(size_t n, size_t k) {
 		std::vector<size_t> myvector;

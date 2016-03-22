@@ -16,13 +16,15 @@ namespace ccr
 	struct FeatureIndex
 	{
 		std::string path;
+		std::string label;
 		int rows;
-		int cols;
+		unsigned short cols;
 		int index;
 
-		FeatureIndex(std::string p, int r, int c, int i)
+		FeatureIndex(std::string p, std::string l, int r, unsigned short c, int i)
 		{
 			path = p;
+			label = l;
 			rows = r;
 			cols = c;
 			index = i;
@@ -39,13 +41,14 @@ namespace ccr
 		std::vector<std::string> labels;	/* optional labels associated with each feature vector */
 
 		// Return de distance between two Matrices
-		float distance(cv::Mat_<float> dict, cv::Mat_<float> data);
+		float distance(cv::Mat dict, cv::Mat data);
 
 	public:
 
 		// construtor
 		VisualDictionary();
 		VisualDictionary(int nCWs, VisualDictionaryMethod method);
+		int getnCWs();
 
 		// destrutor
 		~VisualDictionary();
@@ -54,7 +57,7 @@ namespace ccr
 		void beforeProcess();
 
 		// Add feature vectors
-		void addFeatureVectors(std::string &path);
+		void addFeatureVectors(FeatureIndex &p);
 
 		// Add feature vectors with one label per vector
 		void addFeatureVectors(std::vector<FeatureIndex> fi, std::vector<std::string> &labels);
@@ -63,7 +66,7 @@ namespace ccr
 		void buildDictionary();
 
 		// Compute bag
-		void computeBag(cv::Mat_<float> &data, cv::Mat_<float> &bag);
+		void computeBag(cv::Mat &data, cv::Mat &bag);
 
 		// Save dictionary
 		void save(cv::FileStorage &storage);
