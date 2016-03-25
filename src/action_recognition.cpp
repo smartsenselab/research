@@ -9,7 +9,7 @@ namespace ccr
 	}
 
 	ActionRecognition::~ActionRecognition() {
-		clearNoLongerUseful();
+		//clearNoLongerUseful();
 		params.release();
 		featuresProperties.clear();
 
@@ -117,7 +117,7 @@ namespace ccr
 		switch (classificationProtocol)
 		{
 		case ClassificationProtocol::Train:
-			extractFeatures();
+			//extractFeatures();
 			createDictionary();
 			extractBagOfWords();
 			learnClassificationModel();
@@ -130,21 +130,21 @@ namespace ccr
 			loadClassifierModel();
 			classification();
 			break;
-		/*
+
 		case ClassificationProtocol::LeaveOneOut:
-			extractFeatures();
+			//extractFeatures();
 			createDictionary();
 			extractBagOfWords();
 			leaveOneOut();
 			break;
-		*/
+
 		}
 	}
 
 	void ActionRecognition::extractFeatures()
 	{
 		cv::Mat output;
-		std::string videoName, label, outputFold, path, protocol = "";
+		std::string videoName, label, path;
 		cv::FileNode node;
 		cv::FileNodeIterator inode;
 		cv::FileStorage videosStorage; // storageNumFeat;
@@ -240,7 +240,7 @@ namespace ccr
 
 		// Save dictionary
 		dict->save(storage);
-		std::cout << " OK" << std::endl << std::endl;
+		std::cout << " OK " << std::endl << std::endl;
 		
 		//featuresPath.clear();
 		storage.release();
@@ -540,6 +540,122 @@ namespace ccr
 		for (int i = 0; i < nLabels; i++)
 			delete[] confusionMatScores[i];
 		delete[] confusionMatScores;
+	}
+
+	void ActionRecognition::leaveOneOut()
+	{
+		int i = 0;
+		int numVideos, percent;
+		std::vector<std::thread> threads;
+		std::vector<ccr::Classification> classifiers;
+		int nLabels = mapLabelToBoW.size();
+		cv::Mat_<float> confusionMat(nLabels, nLabels);
+		std::vector<float> **confusionMatScores;
+		confusionMat = 0;
+
+		std::cout << "\n\nLeave One Out ";
+
+		confusionMatScores = new std::vector<float>*[nLabels];
+		for (int j = 0; j < nLabels; j++)
+			confusionMatScores[j] = new std::vector<float>[nLabels];
+
+		std::ofstream class_report;
+		class_report.open("class_report.txt", std::ofstream::out | std::ofstream::trunc); //std::ofstream::app
+		class_report << "realClass\tpredictedClass\tresp" << std::endl;
+		std::cout << ".";
+
+		if (featuresProperties.size() == 0)
+			fillFeaturesProperties();
+
+		std::cout << ". ";
+
+		numVideos = static_cast<int>(featuresProperties.size());
+		
+		while (i < numVideos)
+		{
+			percent = (i * 100) / numVideos;
+			std::cout << percent << "%";
+			std::vector<ClassifierResponse> classifierResponseVector;
+
+			for (int cores = 0; cores < std::thread::hardware_concurrency() && i < numVideos; cores++, i++)
+			{
+				ClassifierResponse cr = { i, 0, 0, 0.0 };
+				classifierResponseVector.push_back(cr);
+			}
+
+			for (auto& cr : classifierResponseVector)
+				threads.push_back(std::thread(&ActionRecognition::classificationThread, this, &cr));
+
+			for (auto& th : threads)
+				th.join();
+
+			for (auto& cr : classifierResponseVector)
+			{
+				confusionMat[cr.realClass][cr.predictedClass]++;
+				confusionMatScores[cr.realClass][cr.predictedClass].push_back(cr.resp);
+				class_report << cr.realClass << "\t" << cr.predictedClass << "\t" << cr.resp << std::endl;
+			}
+
+			threads.clear();
+
+			if (percent > 9)
+				std::cout << "\b\b\b";
+			else
+				std::cout << "\b\b";
+		}
+
+		std::cout << "100%";
+		std::cout << "\b\b\b\b\b";
+		class_report.close();
+
+		generateOutput(nLabels, confusionMat, confusionMatScores);
+		std::cout << ".";
+
+		for (int i = 0; i < nLabels; i++)
+			delete[] confusionMatScores[i];
+		delete[] confusionMatScores;
+
+		std::cout << " OK " << std::endl << std::endl;;
+	}
+
+	void ActionRecognition::classificationThread(ClassifierResponse *cr)
+	{
+		int j = 0;
+		cv::Mat_<float> testData;
+		std::string  testLabel;
+
+		ccr::Classification* c;
+		classifier->reset();
+		c = classifier->duplicateParameters();
+		c->reset();
+
+		for (std::pair<std::string, std::vector<cv::Mat> > p : mapLabelToBoW)
+		{
+			for (cv::Mat_<float> trainData : p.second)
+			{
+				if (cr->i == j)
+				{
+					testData = trainData;
+					testLabel = p.first;
+					j++;
+				}
+				else
+				{
+					c->addSamples(trainData, p.first);
+					j++;
+				}
+			}
+		}
+
+		c->learn();
+
+		cr->realClass = c->retrieveResponseClassIDPosition(testLabel);
+		cv::Mat_<float> responses;
+		c->predict(testData, responses);
+		cr->predictedClass = responses[0][0];
+		cr->resp = responses[0][1];
+
+		delete c;
 	}
 
 	inline void ActionRecognition::generateOutput(int nLabels, cv::Mat_<float> confusionMat, std::vector<float> **confusionMatScores)

@@ -35,6 +35,13 @@ namespace ccr
 		int strideX, strideY,	strideL;
 	};
 
+	struct ClassifierResponse {
+		int i;
+		int realClass;
+		int predictedClass;
+		float resp;
+	};
+
 	class ActionRecognition {
 	private:
 		ClassificationProtocol classificationProtocol;
@@ -64,6 +71,8 @@ namespace ccr
 		void extractBagOfWords();
 		void learnClassificationModel();
 		void classification();
+		void classificationThread(ClassifierResponse *cr);
+		void leaveOneOut();
 		void loadDictionary();
 		void loadClassifierModel();
 		void createBoW(cv::Mat bagOfWords, std::string featurePath);

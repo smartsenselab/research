@@ -32,9 +32,28 @@ namespace ccr
 			std::cerr << "Parameter 'method' has to be set Random or Kmeans" << std::endl;
 	}
 
+	void VisualDictionary::copyCodeWord(int i, cv::Mat_<float> &cluster, std::vector<size_t> &index)
+	{
+		cv::Mat feature;
+		cv::FileStorage storageFeat;
+		cv::FileNode node, n1;
+
+		//Loading feature
+		storageFeat.open(data[index[i]].path, cv::FileStorage::READ);
+		if (storageFeat.isOpened() == false)
+			std::cerr << "Invalid file storage " << (data[index[i]].path + "!") << std::endl;
+
+		node = storageFeat.root();
+		n1 = node["ActionRecognitionFeatures"];
+		n1["Features"] >> feature;
+		storageFeat.release();
+
+		feature.row(data[index[i]].index).copyTo(cluster.row(i));
+	}
+
 	// function to return the dictionary
 	void VisualDictionary::buildDictionary() {
-		
+
 		if (data.size() == 0)
 		{
 			std::cerr << "Set data first" << std::endl;
@@ -42,33 +61,40 @@ namespace ccr
 		}
 
 		std::vector<size_t> index;
+		std::vector<std::thread> threads;
 		cv::Mat_<float> cluster(nCWs, data[0].cols);
 
 		if (method == VisualDictionaryMethod::Random) {
 
-			// Generate a random permutation of BigMatrix.
 			index = GenerateRandomPermutation((size_t)data.size(), (size_t)nCWs);
 
 			// Creates the dictionary
-			for (int i = 0; i < nCWs; i++)
+			int i = 0;
+			int percent;
+			std::cout << " ";
+			while (i < nCWs)
 			{
+				percent = (i * 100) / nCWs;
+				std::cout << percent << "%";
+				std::vector<int> codeWordVector;
+				for (int cores = 0; cores < std::thread::hardware_concurrency() && i < nCWs; cores++, i++)
+					codeWordVector.push_back(i);
 
-				cv::Mat feature;
-				cv::FileStorage storageFeat;
-				cv::FileNode node, n1;
+				for (auto& p : codeWordVector)
+					threads.push_back(std::thread(&VisualDictionary::copyCodeWord, this, p, cluster, index));
 
-				//Loading feature
-				storageFeat.open(data[index[i]].path, cv::FileStorage::READ);
-				if (storageFeat.isOpened() == false)
-					std::cerr << "Invalid file storage " << (data[index[i]].path + "!") << std::endl;
+				for (auto& th : threads)
+					th.join();
 
-				node = storageFeat.root();
-				n1 = node["ActionRecognitionFeatures"];
-				n1["Features"] >> feature;
-				storageFeat.release();
+				threads.clear();
 
-				feature.row(data[index[i]].index).copyTo(cluster.row(i));
+				if (percent > 9)
+					std::cout << "\b\b\b";
+				else
+					std::cout << "\b\b";
 			}
+			std::cout << "100%";
+			std::cout << "\b\b\b\b\b";
 		}
 		else if (method == VisualDictionaryMethod::Kmeans) {
 			// Define criteria

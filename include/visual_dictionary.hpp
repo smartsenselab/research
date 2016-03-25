@@ -2,6 +2,7 @@
 #define VISUAL_DICTIONARY
 
 #include <string>
+#include <thread>
 #include <opencv2\opencv.hpp>
 
 //Carlos Caetano Research
@@ -64,6 +65,7 @@ namespace ccr
 
 		// Function to return the dictionary
 		void buildDictionary();
+		void copyCodeWord(int i, cv::Mat_<float> &cluster, std::vector<size_t> &index);
 
 		// Compute bag
 		void computeBag(cv::Mat &data, cv::Mat &bag);
