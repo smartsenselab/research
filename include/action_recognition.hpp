@@ -57,6 +57,7 @@ namespace ccr
 		ssig::DescriptorTemporal *desc;
 		ccr::VisualDictionary *dict;
 		ccr::Classification *classifier;
+		int saveBinaryFile = 0;
 
 	public:
 
@@ -68,6 +69,7 @@ namespace ccr
 		void beforeProcess();
 		void extractFeatures();
 		void createDictionary();
+		void createDictionary2();
 		void extractBagOfWords();
 		void learnClassificationModel();
 		void classification();
@@ -80,8 +82,10 @@ namespace ccr
 		void loadVideoFrames(cv::FileNodeIterator &inode);
 		void createCuboids();
 		void saveFeature(std::string label, cv::Mat &features, std::string videoName);
+		void saveFeatureBinary(std::string label, cv::Mat &features, std::string videoName);
 		std::vector<std::string> retrieveClassIds();
 		void clearNoLongerUseful();
+		cv::Mat matRead(const std::string& filename, std::string &label);
 
 		inline void fillFeaturesProperties();
 		inline void generateOutput(int nLabels, cv::Mat_<float> confusionMat, std::vector<float> **confusionMatScores);

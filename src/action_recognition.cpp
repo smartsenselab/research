@@ -34,8 +34,11 @@ namespace ccr
 	{
 		std::string rmdir, outputFold;
 
-		rmdir = "RMDIR /S /Q ";
 		params["featureOutput"] >> outputFold;
+		rmdir = "del /f/s/q " + outputFold + " > nul";
+		system(rmdir.c_str());
+
+		rmdir = "RMDIR /S /Q ";
 		system((rmdir + outputFold).c_str());
 	}
 
@@ -45,6 +48,7 @@ namespace ccr
 		std::string mkdir, outputFold;
 		params["videosFile"] >> videosYMLPath;
 		params["outputFile"] >> outputFile;
+		params["saveBinaryFile"] >> saveBinaryFile;
 		cP = static_cast<int>(params["classificationProtocol"]);
 		
 		switch (cP)
@@ -117,14 +121,14 @@ namespace ccr
 		switch (classificationProtocol)
 		{
 		case ClassificationProtocol::Train:
-			//extractFeatures();
-			createDictionary();
+			extractFeatures();
+			createDictionary2();
 			extractBagOfWords();
 			learnClassificationModel();
 			break;
 			
 		case ClassificationProtocol::Test:
-			extractFeatures();
+			//extractFeatures();
 			loadDictionary();
 			extractBagOfWords();
 			loadClassifierModel();
@@ -181,7 +185,11 @@ namespace ccr
 
 			desc->release();
 			
-			saveFeature(label, output, videoName);
+			if (saveBinaryFile)
+				saveFeatureBinary(label, output, videoName);
+			else
+				saveFeature(label, output, videoName);
+
 			std::cout << " OK" << std::endl;
 		}
 		/*
@@ -246,6 +254,43 @@ namespace ccr
 		storage.release();
 	}
 
+	void ActionRecognition::createDictionary2()
+	{
+		std::string path;
+		cv::FileStorage storage;
+		std::string dictModelFile;
+
+		std::cout << "\n\nBuilding dictionary ";
+
+		params["dictionaryFile"] >> dictModelFile;
+
+		// Open modelFile
+		storage.open(dictModelFile, cv::FileStorage::WRITE);
+		if (storage.isOpened() == false)
+			std::cerr << "Invalid file storage!" << std::endl;
+
+		storage << "ActionRecognitionDictionary" << "{";
+
+		std::cout << ".";
+
+		params["featureOutput"] >> path;
+
+		std::cout << ".";
+
+		// Create dictionary 
+		dict->buildDictionary2(path);
+		featuresProperties = dict->getFeaturesProperties();
+		dict->clearFeaturesProperties();
+		std::cout << ".";
+
+		// Save dictionary
+		dict->save(storage);
+		std::cout << " OK " << std::endl << std::endl;
+
+		//featuresPath.clear();
+		storage.release();
+	}
+
 	void ActionRecognition::extractBagOfWords()
 	{
 		int numVideos = 0;
@@ -302,16 +347,25 @@ namespace ccr
 		cv::Mat feature;
 		cv::FileStorage storageFeat;
 		cv::FileNode node, n1;
+		std::string dummy;
 
-		//Loading feature
-		storageFeat.open(featurePath, cv::FileStorage::READ);
-		if (storageFeat.isOpened() == false)
-			std::cerr << "Invalid file storage " << (featurePath + "!") << std::endl;
+		// binary file
+		if (featurePath[featurePath.size() - 1] == 'n')
+		{
+			feature = matRead(featurePath, dummy);
+		}
+		else
+		{
+			//Loading feature
+			storageFeat.open(featurePath, cv::FileStorage::READ);
+			if (storageFeat.isOpened() == false)
+				std::cerr << "Invalid file storage " << (featurePath + "!") << std::endl;
 
-		node = storageFeat.root();
-		n1 = node["ActionRecognitionFeatures"];
-		n1["Features"] >> feature;
-		storageFeat.release();
+			node = storageFeat.root();
+			n1 = node["ActionRecognitionFeatures"];
+			n1["Features"] >> feature;
+			storageFeat.release();
+		}
 
 		for (int r = 0; r < feature.rows; r++) //hard assignment, ModObjectDetectionBOW parece fazer soft assignment...
 		{
@@ -321,6 +375,33 @@ namespace ccr
 			bagOfWords.at<float>(0, idx)+=1;
 		}
 		cv::normalize(bagOfWords, bagOfWords, 1, cv::NORM_L2);
+	}
+
+	cv::Mat ActionRecognition::matRead(const std::string& filename, std::string &label)
+	{
+		std::ifstream fs(filename, std::fstream::binary);
+
+		// Header
+		char* temp;
+		int size, rows, cols, type, channels;
+
+		fs.read((char*)&size, sizeof(int));         // label size
+		temp = new char[size + 1];
+		fs.read(temp, size);												// label
+		temp[size] = '\0';
+		label = temp;
+		delete[] temp;
+
+		fs.read((char*)&rows, sizeof(int));         // rows
+		fs.read((char*)&cols, sizeof(int));         // cols
+		fs.read((char*)&type, sizeof(int));         // type
+		fs.read((char*)&channels, sizeof(int));     // channels
+
+		// Data
+		cv::Mat mat(rows, cols, type);
+		fs.read((char*)mat.data, CV_ELEM_SIZE(type) * rows * cols);
+
+		return mat;
 	}
 
 	void ActionRecognition::learnClassificationModel()
@@ -457,6 +538,38 @@ namespace ccr
 		//featuresPath.push_back(path);
 	}
 
+	void ActionRecognition::saveFeatureBinary(std::string label, cv::Mat &features, std::string videoName) {
+
+		std::string  path = getFileName(videoName, params);
+		std::ofstream fs(path, std::fstream::binary);
+
+		// Header
+		int type = features.type();
+		int channels = features.channels();
+		int size = label.size();
+		fs.write((char*)&size, sizeof(int));						// label size
+		fs.write(label.c_str(), label.size());					// label
+		fs.write((char*)&features.rows, sizeof(int));		// rows
+		fs.write((char*)&features.cols, sizeof(int));		// cols
+		fs.write((char*)&type, sizeof(int));						// type
+		fs.write((char*)&channels, sizeof(int));				// channels
+
+		// Data
+		if (features.isContinuous())
+		{
+			fs.write(features.ptr<char>(0), (features.dataend - features.datastart));
+		}
+		else
+		{
+			int rowsz = CV_ELEM_SIZE(type) * features.cols;
+			for (int r = 0; r < features.rows; ++r)
+			{
+				fs.write(features.ptr<char>(r), rowsz);
+			}
+		}
+		fs.close();
+	}
+
 	inline void ActionRecognition::fillFeaturesProperties()
 	{
 		DIR *dir = 0;
@@ -482,19 +595,30 @@ namespace ccr
 			if (featFile->d_type == isFile)
 			{
 				cv::FileStorage storageFeat;
+				std::string featurePath = path + "\\" + file;
 
-				//Loading feature
-				storageFeat.open(path + "\\" + file, cv::FileStorage::READ);
-				if (storageFeat.isOpened() == false)
-					std::cerr << "Invalid file storage " << (path + file + "!") << std::endl;
+				// binary file
+				if (featurePath[featurePath.size() - 1] == 'n')
+				{
+					cv::Mat feature = matRead(featurePath, label);
+					rows = feature.rows;
+					cols = feature.cols;
+				}
+				else
+				{
+					//Loading feature
+					storageFeat.open(path + "\\" + file, cv::FileStorage::READ);
+					if (storageFeat.isOpened() == false)
+						std::cerr << "Invalid file storage " << (path + file + "!") << std::endl;
 
-				node = storageFeat.root();
-				n1 = node["ActionRecognitionFeatures"];
-				n1["Label"] >> label;
-				node = n1["Features"];
-				node["rows"] >> rows;
-				node["cols"] >> cols;
-				storageFeat.release();
+					node = storageFeat.root();
+					n1 = node["ActionRecognitionFeatures"];
+					n1["Label"] >> label;
+					node = n1["Features"];
+					node["rows"] >> rows;
+					node["cols"] >> cols;
+					storageFeat.release();
+				}
 
 				FeatureIndex fi((path + "\\" + file), label, rows, cols, 0); // 0 is  a dummy number
 				featuresProperties.push_back(fi);				

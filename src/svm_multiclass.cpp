@@ -50,6 +50,14 @@ namespace ccr
 		node["hardNegativeMining"] >> hardNegMining_;
 		node["epsilon"] >> epsilon;
 
+	
+		//default
+		model_->setC(1.0e-1);
+		model_->setType(SVM::C_SVC);
+		model_->setKernel(SVM::LINEAR);
+		model_->setTermCriteria (cvTermCriteria(cv::TermCriteria::MAX_ITER || cv::TermCriteria::EPS, 1.0e3, 1.0e-3));
+
+
 		if (svm_type == "C_SVC"){
 			model_->setType(SVM::C_SVC);
 		}

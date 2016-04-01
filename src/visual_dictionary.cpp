@@ -6,6 +6,8 @@ namespace ccr
 {
 
 	std::vector<size_t> GenerateRandomPermutation(size_t n, size_t k);
+	std::vector<int> GenerateRandomPermutation2(size_t n, size_t k);
+	cv::Mat matRead(const std::string& filename, std::string &label);
 
 	VisualDictionary::VisualDictionary() {
 		nCWs = 10;
@@ -49,6 +51,52 @@ namespace ccr
 		storageFeat.release();
 
 		feature.row(data[index[i]].index).copyTo(cluster.row(i));
+	}
+
+	void VisualDictionary::copyCodeWord2(int i, int pos, cv::Mat_<float> &cluster, std::vector<int> &index)
+	{
+		cv::Mat feature;
+		cv::FileStorage storageFeat;
+		cv::FileNode node, n1;
+		int randInt;
+		std::string label;
+
+		// binary file
+		if (pathFiles[i][pathFiles[i].size() - 1] == 'n')
+		{
+			feature = matRead(pathFiles[i], label);
+		}
+		else
+		{
+			//Loading feature
+			storageFeat.open(pathFiles[i], cv::FileStorage::READ);
+			if (storageFeat.isOpened() == false)
+				std::cerr << "Invalid file storage " << (pathFiles[i] + "!") << std::endl;
+
+			node = storageFeat.root();
+			n1 = node["ActionRecognitionFeatures"];
+			n1["Label"] >> label;
+			n1["Features"] >> feature;
+			storageFeat.release();
+		}
+
+		FeatureIndex fi((pathFiles[i]), label, feature.rows, feature.cols, 0); // 0 is  a dummy number
+		featuresProperties.push_back(fi);
+
+		//////////////////// This is for random seed //////////////////////
+		//std::random_device rd;     // only used once to initialise (seed) engine
+		//std::mt19937 rng(rd());    // random-number engine used (Mersenne-Twister in this case)
+		//std::uniform_int_distribution<int> distribution(0, feature.rows); // min, max. Guaranteed unbiased
+
+		std::default_random_engine generator;
+		std::uniform_int_distribution<int> distribution(0, feature.rows - 1);
+
+		for (int j = 0; j < index[i]; j++)
+		{
+				randInt = distribution(generator);
+				feature.row(randInt).copyTo(cluster.row(pos++));
+		}
+
 	}
 
 	// function to return the dictionary
@@ -107,6 +155,110 @@ namespace ccr
 
 		dictionary = cluster.clone();
 		data.clear(); //data is no more needed
+	}
+
+	void VisualDictionary::buildDictionary2(std:: string path) {
+
+		DIR *dir = 0;
+		std::string file;
+		std::vector<int> index;
+		struct dirent *featFile = 0;
+		std::vector<std::thread> threads;
+		cv::FileStorage storageFeat;
+		cv::FileNode node, n1;
+		int cols;
+
+		dir = opendir(path.c_str());
+
+		if (dir == 0) {
+			std::cerr << "Impossible to open directory." << std::endl;
+			exit(1);
+		}
+		
+		pathFiles.clear();
+		while (featFile = readdir(dir))
+			if (featFile->d_type == isFile)
+				pathFiles.push_back(path + "\\" + featFile->d_name);
+		
+		closedir(dir);
+		index = GenerateRandomPermutation2((size_t)pathFiles.size(), (size_t)nCWs);		
+
+		// binary file
+		if (pathFiles[0][pathFiles[0].size() - 1] == 'n')
+		{
+			std::string dummy;
+			cv::Mat feature = matRead(pathFiles[0], dummy);
+			cols = feature.cols;
+		}
+		else
+		{
+			storageFeat.open(pathFiles[0], cv::FileStorage::READ);
+			if (storageFeat.isOpened() == false)
+				std::cerr << "Invalid file storage " << (pathFiles[0] + "!") << std::endl;
+
+			node = storageFeat.root();
+			n1 = node["ActionRecognitionFeatures"];
+			node = n1["Features"];
+			node["cols"] >> cols;
+			storageFeat.release();
+		}
+
+		cv::Mat_<float> cluster(nCWs, cols);
+		if (method == VisualDictionaryMethod::Random) {
+			// Creates the dictionary
+			int i = 0;
+			int percent;
+			int pos = 0;
+			std::cout << " ";
+			while (i < pathFiles.size())
+			{
+				percent = (i * 100) / pathFiles.size();
+				std::cout << percent << "%";
+				std::vector<std::pair<int, int>> codeWordVector;
+				//for (int cores = 0; cores < std::thread::hardware_concurrency() && i < pathFiles.size(); cores++, i++)
+				int cores = 0;
+				while (cores < std::thread::hardware_concurrency() && i < pathFiles.size())
+				{
+					if (index[i] == 0)
+					{
+						i++;
+						continue;
+					}
+					
+					std::pair<int, int> p(i, pos);
+					codeWordVector.push_back(p);
+					pos += index[i++];
+					cores++;
+				}
+
+				for (auto& p : codeWordVector)
+					threads.push_back(std::thread(&VisualDictionary::copyCodeWord2, this, p.first, p.second, cluster, index));
+
+				for (auto& th : threads)
+					th.join();
+
+				threads.clear();
+
+				if (percent > 9)
+					std::cout << "\b\b\b";
+				else
+					std::cout << "\b\b";
+			}
+			std::cout << "100%";
+			std::cout << "\b\b\b\b\b";
+		}
+		else if (method == VisualDictionaryMethod::Kmeans) {
+			// Define criteria
+			cv::TermCriteria criteria(cv::TermCriteria::COUNT, 100, 0.001);
+
+			// Apply kmeans()
+			//cv::kmeans(data, nCWs, label, criteria, 1, cv::KMEANS_RANDOM_CENTERS, cluster);
+			// Está comentado pois teria que ler todas as features do disco e colcoar em uma Matriz data... não tem memória suficiente para subir todas
+		}
+
+		dictionary = cluster.clone();
+		data.clear(); //data is no more needed
+		pathFiles.clear();
 	}
 
 	// compute bag
@@ -188,6 +340,8 @@ namespace ccr
 	}
 
 	int VisualDictionary::getnCWs() { return nCWs; }
+	std::vector<FeatureIndex> VisualDictionary::getFeaturesProperties() { return featuresProperties; }
+	void VisualDictionary::clearFeaturesProperties() { featuresProperties.clear(); }
 
 	std::vector<size_t> GenerateRandomPermutation(size_t n, size_t k) {
 		std::vector<size_t> myvector;
@@ -207,6 +361,56 @@ namespace ccr
 			newvector.push_back(myvector.at(i));
 
 		return newvector;
+	}
+
+	std::vector<int> GenerateRandomPermutation2(size_t n, size_t k) {
+		
+		int randInt;
+		std::vector<int> myvector(n, 0);
+		
+		//////////////////// This is for random seed //////////////////////
+		//std::random_device rd;     // only used once to initialise (seed) engine
+		//std::mt19937 rng(rd());    // random-number engine used (Mersenne-Twister in this case)
+		//std::uniform_int_distribution<int> distribution(0, feature.rows); // min, max. Guaranteed unbiased
+		
+		std::default_random_engine generator;
+		std::uniform_int_distribution<int> distribution(0, n - 1);
+
+		for (int i = 0; i < k; i++)
+		{
+			randInt = distribution(generator);
+			myvector[randInt]++;
+		}
+
+		return myvector;
+	}
+
+
+	cv::Mat matRead(const std::string& filename, std::string &label)
+	{
+		std::ifstream fs(filename, std::fstream::binary);
+
+		// Header
+		char* temp;
+		int size, rows, cols, type, channels;
+
+		fs.read((char*)&size, sizeof(int));         // label size
+		temp = new char[size + 1];
+		fs.read(temp, size);												// label
+		temp[size] = '\0';
+		label = temp;
+		delete [] temp;
+
+		fs.read((char*)&rows, sizeof(int));         // rows
+		fs.read((char*)&cols, sizeof(int));         // cols
+		fs.read((char*)&type, sizeof(int));         // type
+		fs.read((char*)&channels, sizeof(int));     // channels
+
+		// Data
+		cv::Mat mat(rows, cols, type);
+		fs.read((char*)mat.data, CV_ELEM_SIZE(type) * rows * cols);
+
+		return mat;
 	}
 
 }
