@@ -86,6 +86,7 @@ namespace ccr
 		std::vector<std::string> retrieveClassIds();
 		void clearNoLongerUseful();
 		cv::Mat matRead(const std::string& filename, std::string &label);
+		std::string getFileName(std::string videoName, cv::FileStorage &params);
 
 		inline void fillFeaturesProperties();
 		inline void generateOutput(int nLabels, cv::Mat_<float> confusionMat, std::vector<float> **confusionMatScores);

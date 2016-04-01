@@ -221,6 +221,7 @@ namespace ccr
 				{
 					if (index[i] == 0)
 					{
+						includeFeaturePropertie(i); //since it won't be processed by the dictionary
 						i++;
 						continue;
 					}
@@ -259,6 +260,36 @@ namespace ccr
 		dictionary = cluster.clone();
 		data.clear(); //data is no more needed
 		pathFiles.clear();
+	}
+
+	inline void VisualDictionary::includeFeaturePropertie(int i)
+	{
+		cv::Mat feature;
+		cv::FileStorage storageFeat;
+		cv::FileNode node, n1;
+		std::string label;
+
+		// binary file
+		if (pathFiles[i][pathFiles[i].size() - 1] == 'n')
+		{
+			feature = matRead(pathFiles[i], label);
+		}
+		else
+		{
+			//Loading feature
+			storageFeat.open(pathFiles[i], cv::FileStorage::READ);
+			if (storageFeat.isOpened() == false)
+				std::cerr << "Invalid file storage " << (pathFiles[i] + "!") << std::endl;
+
+			node = storageFeat.root();
+			n1 = node["ActionRecognitionFeatures"];
+			n1["Label"] >> label;
+			n1["Features"] >> feature;
+			storageFeat.release();
+		}
+
+		FeatureIndex fi((pathFiles[i]), label, feature.rows, feature.cols, 0); // 0 is  a dummy number
+		featuresProperties.push_back(fi);
 	}
 
 	// compute bag

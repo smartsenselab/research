@@ -54,6 +54,8 @@ namespace ccr
 		// Return de distance between two Matrices
 		float distance(cv::Mat dict, cv::Mat data);
 
+		inline void includeFeaturePropertie(int i);
+
 	public:
 
 		// construtor

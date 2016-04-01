@@ -121,7 +121,7 @@ namespace ccr
 		switch (classificationProtocol)
 		{
 		case ClassificationProtocol::Train:
-			extractFeatures();
+			//extractFeatures();
 			createDictionary2();
 			extractBagOfWords();
 			learnClassificationModel();
@@ -279,7 +279,8 @@ namespace ccr
 
 		// Create dictionary 
 		dict->buildDictionary2(path);
-		featuresProperties = dict->getFeaturesProperties();
+		if (featuresProperties.size() == 0)
+			featuresProperties = dict->getFeaturesProperties();
 		dict->clearFeaturesProperties();
 		std::cout << ".";
 
@@ -1013,15 +1014,22 @@ namespace ccr
 		return ap;
 	}
 
-	std::string getFileName(std::string videoName, cv::FileStorage &params)
+	std::string ActionRecognition::getFileName(std::string videoName, cv::FileStorage &params)
 	{
 		short i = 1;
+		std::string ext;
 		bool fileExists = false;
 		std::string outputFold, path;
 		// Open modelFile
 		params["featureOutput"] >> outputFold;
 		//system((mkdir + outputFold).c_str());
-		path = outputFold + "\\" + videoName + ".yml";
+
+		if (saveBinaryFile)
+			ext = ".bin";
+		else
+			ext = ".yml";
+
+		path = outputFold + "\\" + videoName + ext;
 
 		do
 		{
@@ -1030,7 +1038,7 @@ namespace ccr
 				char buffer[3];
 				fileExists = true;
 				itoa(i++, buffer, 10);
-				path = outputFold + "\\" + videoName + "_" + buffer + ".yml";
+				path = outputFold + "\\" + videoName + "_" + buffer + ext;
 				fclose(file);
 			}
 			else
