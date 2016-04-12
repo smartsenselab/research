@@ -186,7 +186,7 @@ namespace ccr
 			std::cout << " .";
 
 			//REMOVER
-			if (video[video.size()-1].cols == 0)
+			while (video[video.size()-1].cols == 0)
 						video.pop_back();
 			//FIM REMOVER
 
