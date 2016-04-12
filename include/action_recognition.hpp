@@ -29,6 +29,13 @@ namespace ccr
 		LeaveOneOut
 	};
 
+	enum ClassificationType
+	{
+		OneAgainstOne,						//OAO
+		OneAgainstAll,						//OAA, seleciona a respota com maior Score
+		OneAgainstAllMultiLabel		//OAA, permite vídeo ter mais de uma label
+	};
+
 	struct SamplingSetup
 	{
 		int sampleX, sampleY, sampleL;
@@ -45,6 +52,7 @@ namespace ccr
 	class ActionRecognition {
 	private:
 		ClassificationProtocol classificationProtocol;
+		ClassificationType classificationType;
 		
 		//long numExtractFeatures;
 		std::string videosYMLPath;
@@ -72,6 +80,8 @@ namespace ccr
 		void createDictionary2();
 		void extractBagOfWords();
 		void learnClassificationModel();
+		void learnOneAgainstOneClassification();
+		void learnOneAgainstAllClassification();
 		void classification();
 		void classificationThread(ClassifierResponse *cr);
 		void leaveOneOut();

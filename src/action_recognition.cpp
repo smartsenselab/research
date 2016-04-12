@@ -43,13 +43,14 @@ namespace ccr
 	}
 
 	void ActionRecognition::beforeProcess() {
-		int cP;
+		int cP, cT;
 		cv::FileNode node;
 		std::string mkdir, outputFold;
 		params["videosFile"] >> videosYMLPath;
 		params["outputFile"] >> outputFile;
 		params["saveBinaryFile"] >> saveBinaryFile;
 		cP = static_cast<int>(params["classificationProtocol"]);
+		cT = static_cast<int>(params["classificationType"]);
 		
 		switch (cP)
 		{
@@ -64,6 +65,21 @@ namespace ccr
 			break;
 		default:
 			classificationProtocol = ClassificationProtocol::Train;
+		}
+
+		switch (cT)
+		{
+		case ClassificationType::OneAgainstOne:
+			classificationType = ClassificationType::OneAgainstOne;
+			break;
+		case ClassificationType::OneAgainstAll:
+			classificationType = ClassificationType::OneAgainstAll;
+			break;
+		case ClassificationType::OneAgainstAllMultiLabel:
+			classificationType = OneAgainstAllMultiLabel;
+			break;
+		default:
+			classificationType = ClassificationType::OneAgainstOne;
 		}
 
 
@@ -121,8 +137,9 @@ namespace ccr
 		switch (classificationProtocol)
 		{
 		case ClassificationProtocol::Train:
-			//extractFeatures();
+			extractFeatures();
 			createDictionary2();
+			////loadDictionary();
 			extractBagOfWords();
 			learnClassificationModel();
 			break;
@@ -167,6 +184,11 @@ namespace ccr
 			loadVideoFrames(inode);
 			label = (*inode)["objID"].isNone() ? "" : (std::string)(*inode)["objID"];
 			std::cout << " .";
+
+			//REMOVER
+			if (video[video.size()-1].cols == 0)
+						video.pop_back();
+			//FIM REMOVER
 
 			cuboids.clear();
 			createCuboids();
@@ -407,6 +429,14 @@ namespace ccr
 
 	void ActionRecognition::learnClassificationModel()
 	{
+		if (this->classificationType == ClassificationType::OneAgainstOne)
+			learnOneAgainstOneClassification();
+		else if (this->classificationType == ClassificationType::OneAgainstAll || this->classificationType == ClassificationType::OneAgainstAllMultiLabel)
+			learnOneAgainstAllClassification();
+	}
+
+	void ActionRecognition::learnOneAgainstOneClassification()
+	{
 		std::string classModelFile;
 		cv::FileStorage storage;
 		std::vector<std::string> labelsName;
@@ -429,6 +459,52 @@ namespace ccr
 		storage << "Labels" << labelsName;
 		classifier->save(storage);
 		storage.release();
+	}
+
+	void ActionRecognition::learnOneAgainstAllClassification()
+	{
+		std::string split, classModelFile;
+		cv::FileStorage storage;
+		std::vector<std::string> labelsName, splitStr;
+
+		//params["classModelFile"] >> classModelFile;
+		params["classModelFile"] >> split;
+		splitStr = splitString(split, '.');
+
+		int i = 0;
+		for (std::map<std::string, std::vector<cv::Mat>>::iterator it = mapLabelToBoW.begin(); it != mapLabelToBoW.end(); ++it)
+		{
+			std::string oneLabel = it->first;
+			std::ostringstream intConvert;
+			intConvert << i;
+			classModelFile = splitStr[0] + intConvert.str() + ".yml";
+			i++;
+
+			// Open modelFile
+			storage.open(classModelFile, cv::FileStorage::WRITE);
+			if (storage.isOpened() == false)
+				std::cerr << "Invalid file storage " << (classModelFile + "!") << std::endl;
+
+			storage << "ActionRecognitionClassificationModel" << "{";
+
+			classifier->reset();
+			for (std::pair<std::string, std::vector<cv::Mat>> p : mapLabelToBoW)
+			{
+				for (cv::Mat trainData : p.second)
+				{
+					if (oneLabel == p.first)
+						classifier->addSamples(trainData, oneLabel); //Insert the "One" label
+					else
+						classifier->addSamples(trainData, "Rest"); //Insert the "Rest", the others
+				}
+			}
+
+			classifier->learn();
+			labelsName = classifier->retrieveClassIDs();
+			storage << "Labels" << labelsName;
+			classifier->save(storage);
+			storage.release();
+		}
 	}
 
 	void ActionRecognition::loadDictionary()
