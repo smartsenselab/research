@@ -156,7 +156,7 @@ namespace ccr
 		switch (classificationProtocol)
 		{
 		case ClassificationProtocol::Train:
-			extractFeatures();
+			//extractFeatures();
 			createDictionary2();
 			////loadDictionary();
 			extractBagOfWords();
@@ -1125,12 +1125,13 @@ namespace ccr
 
 	void ActionRecognition::generateOutputMultiLabel(std::vector<cv::Mat_<float>> vecConfusionMat, std::vector<std::vector<float>**> vecConfusionMatScores)
 	{
-		std::vector<cv::Mat_<float>> vecOutput;
+		std::vector<cv::Mat_<float>> vecOutput;		
 		cv::FileStorage storage;
 		double meanAP = 0.0;
 		double meanACC = 0.0;
 		double stdDev = 0.0;
 		int numClassifiers = classifiers.size();
+		float *vecAp = new float[numClassifiers];
 
 		//Create output file
 		storage.open(outputFile, cv::FileStorage::WRITE);
@@ -1203,20 +1204,14 @@ namespace ccr
 				output[l][7] = (output[l][0] + output[l][3]) / (output[l][0] + output[l][1] + output[l][2] + output[l][3]); //accuracy per class
 			}
 
-			float *ap = new float[nLabels];
-			for (int label = 0; label < nLabels; label++)
-				ap[label] = averagePrecision(label, output[label][0], output[label][2], TPScores, FPScores);
-
-			meanAP += std::accumulate(ap, ap + nLabels, 0.0f);
-			meanACC += meanAccuracy(output.col(7));
-			stdDev += stdDeviation(output.col(7), meanACC);
-
+			vecAp[c] = averagePrecision(0, output[0][0], output[0][2], TPScores, FPScores);
+			
 			vecOutput.push_back(output);
 		}
 
-		meanAP = meanAP / static_cast<double>(numClassifiers);
-		meanACC = meanACC / static_cast<double>(numClassifiers);
-		stdDev = stdDev / static_cast<double>(numClassifiers);
+		meanAP = std::accumulate(vecAp, vecAp + numClassifiers, 0.0f);
+		meanACC = meanAccuracyOneAgainstAll(vecOutput);
+		stdDev = stdDeviationOneAgainstAll(vecOutput, meanACC);
 
 		storage << "MeanAccuracy" << meanACC;
 		storage << "StandardDeviationACC" << stdDev;
@@ -1238,12 +1233,12 @@ namespace ccr
 			storage << "recall" << output[0][5];
 			storage << "specificity" << output[0][6];
 			storage << "accPerClass" << output[0][7];
-			//storage << "apPerClass" << ap[label];
+			storage << "apPerClass" << vecAp[label];
 			storage << "}";
 		}
 		storage.release();
 
-		//delete ap;
+		delete vecAp;
 	}
 
 	std::vector<std::string> ActionRecognition::retrieveClassIds()
@@ -1281,6 +1276,20 @@ namespace ccr
 		return standDev;
 	}
 
+	double stdDeviationOneAgainstAll(std::vector<cv::Mat_<float>> list, double mean)
+	{
+		double sum = 0.0;
+		double standDev = 0.0;
+
+		for (auto &output : list)
+			sum += (output[0][7] - mean)*(output[0][7] - mean);
+
+		sum = (double)(sum / (list.size() - 1));
+		standDev = sqrt(sum);
+
+		return standDev;
+	}
+
 	double meanAccuracy(cv::Mat_<float> list)
 	{
 		double sum = 0.0;
@@ -1290,6 +1299,19 @@ namespace ccr
 			sum += list[i][0];
 
 		mean = (double)(sum / (list.rows));
+
+		return mean;
+	}
+
+	double meanAccuracyOneAgainstAll(std::vector<cv::Mat_<float>> list)
+	{
+		double sum = 0.0;
+		double mean = 0.0;
+
+		for (auto &output : list)
+			sum += output[0][7];
+
+		mean = (double)(sum / (list.size()));
 
 		return mean;
 	}

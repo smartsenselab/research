@@ -123,7 +123,9 @@ namespace ccr
 	std::vector<int> splitTemporalScales(std::string str, char delimiter);
 	std::string getFileName(std::string videoName, cv::FileStorage &params);
 	double meanAccuracy(cv::Mat_<float> list);
+	double meanAccuracyOneAgainstAll(std::vector<cv::Mat_<float>> list);
 	double stdDeviation(cv::Mat_<float> list, double mean);
+	double stdDeviationOneAgainstAll(std::vector<cv::Mat_<float>> list, double mean);
 	float averagePrecision(int label, int numTp, int numFn, std::map<int, std::vector<float>> TPScores, std::map<int, std::vector<float>> FPScores);
 }
 

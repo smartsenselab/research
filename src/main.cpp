@@ -8,9 +8,9 @@
 int main(int argc, char *argv[]) {
 	
 	////// TESTE //////
-	//ccr::ActionRecognition *ar = new  ccr::ActionRecognition("arquivos//params.yml");
-	//ar->execute();
-	//delete ar;
+	ccr::ActionRecognition *ar = new  ccr::ActionRecognition("arquivos//params.yml");
+	ar->execute();
+	delete ar;
 	///////////////////
 
 	if (argc > 1)
