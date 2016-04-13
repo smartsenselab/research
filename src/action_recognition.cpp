@@ -23,11 +23,27 @@ namespace ccr
 			delete this->dict;
 			dict = NULL;
 		}
+		/*
 		if (this->classifier != NULL)
 		{
 			delete this->classifier;
 			classifier = NULL;
 		}
+		*/
+		deleteClassifiers();
+	}
+
+	void ActionRecognition::deleteClassifiers()
+	{
+		for (auto &c : classifiers)
+		{
+			if (c != NULL)
+			{
+				delete c;
+				c = NULL;
+			}
+		}
+		classifiers.clear();
 	}
 
 	void ActionRecognition::clearNoLongerUseful()
@@ -51,7 +67,7 @@ namespace ccr
 		params["saveBinaryFile"] >> saveBinaryFile;
 		cP = static_cast<int>(params["classificationProtocol"]);
 		cT = static_cast<int>(params["classificationType"]);
-		
+
 		switch (cP)
 		{
 		case ClassificationProtocol::Train:
@@ -86,7 +102,9 @@ namespace ccr
 		mkdir = "MKDIR ";
 		params["featureOutput"] >> outputFold;
 		system((mkdir + outputFold).c_str());
-
+		params["bowOutput"] >> outputFold;
+		if (outputFold != "")
+			system((mkdir + outputFold).c_str());
 
 		node = params["samplingSetup"]["blocks"];
 		for (int i = 0; i < node.size(); ++i) {
@@ -108,7 +126,7 @@ namespace ccr
 		std::vector<int> vec = splitTemporalScales(tempS, ',');
 
 		desc = new ssig::OFCM(nBMag, nBAng, distMag, distAng, cubL, maxMag, logQ, static_cast<bool>(movF), vec);
-		
+
 
 		node = params["visualDictionayParams"];
 		int nCWs = node["nCWs"];
@@ -128,7 +146,8 @@ namespace ccr
 		}
 
 		dict = new ccr::VisualDictionary(nCWs, vdMethod);
-		classifier = new ccr::SVM_Multiclass(params);
+		//classifier = new ccr::SVM_Multiclass(params);
+		classifiers.push_back(new ccr::SVM_Multiclass(params));
 	}
 
 	void ActionRecognition::execute()
@@ -143,7 +162,7 @@ namespace ccr
 			extractBagOfWords();
 			learnClassificationModel();
 			break;
-			
+
 		case ClassificationProtocol::Test:
 			//extractFeatures();
 			loadDictionary();
@@ -178,17 +197,12 @@ namespace ccr
 			std::vector<std::string> split = splitString(videoName, '/');
 			videoName = splitString(split[split.size() - 1], '.')[0];
 			std::cout << "Extracting features from " << videoName;
-			
+
 			video.clear();
-			
+
 			loadVideoFrames(inode);
 			label = (*inode)["objID"].isNone() ? "" : (std::string)(*inode)["objID"];
 			std::cout << " .";
-
-			//REMOVER
-			while (video[video.size()-1].cols == 0)
-						video.pop_back();
-			//FIM REMOVER
 
 			cuboids.clear();
 			createCuboids();
@@ -206,7 +220,7 @@ namespace ccr
 			featuresProperties.push_back(fi);
 
 			desc->release();
-			
+
 			if (saveBinaryFile)
 				saveFeatureBinary(label, output, videoName);
 			else
@@ -216,16 +230,16 @@ namespace ccr
 		}
 		/*
 		params["featureOutput"] >> outputFold;
-		
+
 		if (classificationProtocol == ClassificationProtocol::Train)
-			protocol = "Train";
+		protocol = "Train";
 		else if (classificationProtocol == ClassificationProtocol::Test)
-			protocol = "Test";
+		protocol = "Test";
 
 		path = outputFold + "\\numFeatures" + protocol + ".yml";
 		storageNumFeat.open(path, cv::FileStorage::WRITE);
 		if (storageNumFeat.isOpened() == false)
-			std::cerr << "Invalid file storage!" << std::endl;
+		std::cerr << "Invalid file storage!" << std::endl;
 		storageNumFeat << "Features" << numExtractFeatures;
 
 		storageNumFeat.release();
@@ -271,7 +285,7 @@ namespace ccr
 		// Save dictionary
 		dict->save(storage);
 		std::cout << " OK " << std::endl << std::endl;
-		
+
 		//featuresPath.clear();
 		storage.release();
 	}
@@ -324,7 +338,7 @@ namespace ccr
 			fillFeaturesProperties();
 
 		numVideos = static_cast<int>(featuresProperties.size());
-		
+
 		while (v < numVideos)
 		{
 			std::cout << "Extracting Bag of Words for videos ";
@@ -344,20 +358,25 @@ namespace ccr
 			std::cout << ".";
 			for (auto& p : bagOfWordsVector)
 				threads.push_back(std::thread(&ActionRecognition::createBoW, this, p.first, p.second));
-			
+
 			std::cout << ".";
 			for (auto& th : threads)
 				th.join();
-			
+
 			std::cout << ".";
 			//for (auto& p : bagOfWordsVector) // Old way. Used just for one label per video
-				//this->mapLabelToBoW[mapPathToLabel[p.second]].push_back(p.first); //Used just for one label per video
+			//this->mapLabelToBoW[mapPathToLabel[p.second]].push_back(p.first); //Used just for one label per video
 
 			for (auto& p : bagOfWordsVector) // New way. Used just for multi-label videos
 			{
 				std::vector<std::string> multiLabel = splitString(mapPathToLabel[p.second], ',');
 				for (std::string &label : multiLabel)
+				{
 					this->mapLabelToBoW[label].push_back(p.first);
+					std::vector<std::string> videoName = splitString(p.second, '\\');
+					videoName = splitString(videoName[videoName.size() - 1], '.');
+					saveBoW(label, p.first, videoName[0]);
+				}
 			}
 
 			std::cout << " OK" << std::endl;
@@ -395,7 +414,7 @@ namespace ccr
 			cv::Mat partialBagging;
 			dict->computeBag(feature.row(r), partialBagging);
 			int idx = static_cast<int>(partialBagging.at<float>(1, 0)); //[0][0] contains the distance, [0][1] contains the index
-			bagOfWords.at<float>(0, idx)+=1;
+			bagOfWords.at<float>(0, idx) += 1;
 		}
 		cv::normalize(bagOfWords, bagOfWords, 1, cv::NORM_L2);
 	}
@@ -452,12 +471,12 @@ namespace ccr
 
 		for (std::pair<std::string, std::vector<cv::Mat>> p : mapLabelToBoW)
 			for (cv::Mat trainData : p.second)
-				classifier->addSamples(trainData, p.first);
+				classifiers[0]->addSamples(trainData, p.first);
 
-		classifier->learn();
-		labelsName = classifier->retrieveClassIDs();
+		classifiers[0]->learn();
+		labelsName = classifiers[0]->retrieveClassIDs();
 		storage << "Labels" << labelsName;
-		classifier->save(storage);
+		classifiers[0]->save(storage);
 		storage.release();
 	}
 
@@ -487,22 +506,22 @@ namespace ccr
 
 			storage << "ActionRecognitionClassificationModel" << "{";
 
-			classifier->reset();
+			classifiers[0]->reset();
 			for (std::pair<std::string, std::vector<cv::Mat>> p : mapLabelToBoW)
 			{
 				for (cv::Mat trainData : p.second)
 				{
 					if (oneLabel == p.first)
-						classifier->addSamples(trainData, oneLabel); //Insert the "One" label
+						classifiers[0]->addSamples(trainData, oneLabel); //Insert the "One" label
 					else
-						classifier->addSamples(trainData, "Rest"); //Insert the "Rest", the others
+						classifiers[0]->addSamples(trainData, "Rest"); //Insert the "Rest", the others
 				}
 			}
 
-			classifier->learn();
-			labelsName = classifier->retrieveClassIDs();
+			classifiers[0]->learn();
+			labelsName = classifiers[0]->retrieveClassIDs();
 			storage << "Labels" << labelsName;
-			classifier->save(storage);
+			classifiers[0]->save(storage);
 			storage.release();
 		}
 	}
@@ -526,7 +545,7 @@ namespace ccr
 		storage.release();
 	}
 
-	void ActionRecognition::loadClassifierModel()
+	void ActionRecognition::loadOneAgainstOneClassifierModel()
 	{
 		cv::FileStorage storage;
 		cv::FileNode node, n1;
@@ -541,8 +560,49 @@ namespace ccr
 
 		node = storage.root();
 		n1 = node["ActionRecognitionClassificationModel"];
-		classifier->load(n1, storage);
+		classifiers[0]->load(n1, storage);
 		storage.release();
+	}
+
+	void ActionRecognition::loadOneAgainstAllClassifierModel()
+	{
+		int numClassifiers = retrieveClassIds().size();
+		deleteClassifiers();
+
+		cv::FileStorage storage;
+		cv::FileNode node, n1;
+		std::string split, classModelFile;
+		std::vector<std::string> splitStr;
+
+		params["classModelFile"] >> split;
+		splitStr = splitString(split, '.');
+
+		for (int i = 0; i < numClassifiers; i++)
+		{
+			std::ostringstream intConvert;
+			intConvert << i;
+			classModelFile = splitStr[0] + intConvert.str() + ".yml";
+
+			//Loading Classifier Model
+			storage.open(classModelFile, cv::FileStorage::READ);
+			if (storage.isOpened() == false)
+				std::cerr << "Invalid file storage " << classModelFile << "!" << std::endl;
+
+			node = storage.root();
+			n1 = node["ActionRecognitionClassificationModel"];
+			classifiers.push_back(new ccr::SVM_Multiclass(params));
+			classifiers[i]->load(n1, storage);
+			storage.release();
+		}
+
+	}
+
+	void ActionRecognition::loadClassifierModel()
+	{
+		if (this->classificationType == ClassificationType::OneAgainstOne)
+			loadOneAgainstOneClassifierModel();
+		else if (this->classificationType == ClassificationType::OneAgainstAll || this->classificationType == ClassificationType::OneAgainstAllMultiLabel)
+			loadOneAgainstAllClassifierModel();
 	}
 
 	void ActionRecognition::createCuboids()
@@ -565,7 +625,7 @@ namespace ccr
 		std::string path;
 		cv::VideoCapture capture;
 		cv::Mat image;
-		
+
 		video.clear();
 
 		// load video
@@ -583,25 +643,27 @@ namespace ccr
 			step = (int)(videoLength / nSamples); // generate step based on the number of samples
 		else
 			step = (*inode)["step"].isNone() ? 1 : (int)(*inode)["step"]; // load step
-		
+
 		for (unsigned long int frameStep = 0; frameStep < videoLength; frameStep += step)
 		{
 			capture.set(CV_CAP_PROP_POS_FRAMES, frameStep);
 			capture.read((image));
+			
 			if (image.empty())
-				std::cerr << "Error processing file. Can't read frame " << frameStep << "from video " << path << std::endl;
-			video.push_back(image.clone());
+				std::cerr << "Error processing file. Can't read frame " << frameStep << " from video " << path << std::endl;
+			else
+				video.push_back(image.clone());
 		}
 
 	}
 
 	void ActionRecognition::saveFeature(std::string label, cv::Mat &features, std::string videoName) {
-		
+
 		cv::FileStorage storage;
 		std::string path;
 		// Open modelFile
 		path = getFileName(videoName, params);
-		
+
 		storage.open(path, cv::FileStorage::WRITE);
 		if (storage.isOpened() == false)
 			std::cerr << "Invalid file storage!" << std::endl;
@@ -611,8 +673,32 @@ namespace ccr
 		storage << "Features" << features;
 
 		storage.release();
-		
+
 		//featuresPath.push_back(path);
+	}
+
+	void ActionRecognition::saveBoW(std::string label, cv::Mat &features, std::string videoName) {
+
+		std::string path;
+		params["bowOutput"] >> path;
+		if (path != "")
+		{
+			cv::FileStorage storage;
+			path = path + "\\" + videoName + ".yml";
+
+			// Open modelFile
+			storage.open(path, cv::FileStorage::WRITE);
+			if (storage.isOpened() == false)
+				std::cerr << "Invalid file storage!" << std::endl;
+
+			storage << "ActionRecognitionFeatures" << "{";
+			storage << "Label" << label;
+			storage << "Features" << features;
+
+			storage.release();
+
+			//featuresPath.push_back(path);
+		}
 	}
 
 	void ActionRecognition::saveFeatureBinary(std::string label, cv::Mat &features, std::string videoName) {
@@ -698,14 +784,24 @@ namespace ccr
 				}
 
 				FeatureIndex fi((path + "\\" + file), label, rows, cols, 0); // 0 is  a dummy number
-				featuresProperties.push_back(fi);				
+				featuresProperties.push_back(fi);
 			}
 		}
 	}
 
 	void ActionRecognition::classification()
 	{
-		int nLabels = classifier->retrieveClassIDs().size();
+		if (this->classificationType == ClassificationType::OneAgainstOne)
+			oneAgainstOneClassification();
+		else if (this->classificationType == ClassificationType::OneAgainstAll)
+			oneAgainstAllClassification();
+		else if (this->classificationType == ClassificationType::OneAgainstAllMultiLabel)
+			oneAgainstAllMultiLabelClassification();
+	}
+
+	void ActionRecognition::oneAgainstOneClassification()
+	{
+		int nLabels = classifiers[0]->retrieveClassIDs().size();
 		cv::Mat_<float> confusionMat(nLabels, nLabels);
 		std::vector<float> **confusionMatScores;
 		confusionMat = 0;
@@ -720,11 +816,11 @@ namespace ccr
 
 		for (std::pair<std::string, std::vector<cv::Mat> > p : mapLabelToBoW)
 		{
-			int realClass = classifier->retrieveResponseClassIDPosition(p.first);
+			int realClass = classifiers[0]->retrieveResponseClassIDPosition(p.first);
 			for (cv::Mat_<float> testData : p.second)
 			{
 				cv::Mat_<float> responses;
-				classifier->predict(testData, responses);
+				classifiers[0]->predict(testData, responses);
 				int predictedClass = responses[0][0];
 				float resp = responses[0][1];
 				confusionMat[realClass][predictedClass]++;
@@ -741,6 +837,70 @@ namespace ccr
 		for (int i = 0; i < nLabels; i++)
 			delete[] confusionMatScores[i];
 		delete[] confusionMatScores;
+	}
+
+	void ActionRecognition::oneAgainstAllClassification()
+	{
+	}
+
+	void ActionRecognition::oneAgainstAllMultiLabelClassification()
+	{
+
+		std::vector<cv::Mat_<float>> vecConfusionMat;
+		std::vector<std::vector<float>**> vecConfusionMatScores;
+
+		for (int c = 0; c < classifiers.size(); c++)
+		{
+			std::vector<std::string> ids = classifiers[c]->retrieveClassIDs();
+			int nLabels = ids.size();
+			cv::Mat_<float> confusionMat(nLabels, nLabels);
+			std::vector<float> **confusionMatScores;
+			confusionMat = 0;
+
+			confusionMatScores = new std::vector<float>*[nLabels];
+			for (int i = 0; i < nLabels; i++)
+				confusionMatScores[i] = new std::vector<float>[nLabels];
+
+			std::ofstream class_report;
+			std::ostringstream intConvert;
+			intConvert << c;
+			class_report.open("class_report" + intConvert.str() + ".txt", std::ofstream::out | std::ofstream::app);
+			class_report << "realClass\tpredictedClass\tresp" << std::endl;
+
+			for (std::pair<std::string, std::vector<cv::Mat> > p : mapLabelToBoW)
+			{
+				std::string idLabel;
+				if (p.first == ids[0])
+					idLabel = p.first;
+				else
+					idLabel = ids[1];
+
+				int realClass = classifiers[c]->retrieveResponseClassIDPosition(idLabel);
+				for (cv::Mat_<float> testData : p.second)
+				{
+					cv::Mat_<float> responses;
+					classifiers[c]->predict(testData, responses);
+					int predictedClass = responses[0][0];
+					float resp = responses[0][1];
+					confusionMat[realClass][predictedClass]++;
+					confusionMatScores[realClass][predictedClass].push_back(resp);
+
+					class_report << realClass << "\t" << predictedClass << "\t" << resp << std::endl;
+				}
+			}
+			vecConfusionMat.push_back(confusionMat);
+			vecConfusionMatScores.push_back(confusionMatScores);
+			class_report.close();
+		}
+
+		generateOutputMultiLabel(vecConfusionMat, vecConfusionMatScores);
+
+		for (auto &confusionMatScores : vecConfusionMatScores)
+		{
+			for (int i = 0; i < classifiers[0]->retrieveClassIDs().size(); i++)
+				delete[] confusionMatScores[i];
+			delete[] confusionMatScores;
+		}
 	}
 
 	void ActionRecognition::leaveOneOut()
@@ -826,8 +986,8 @@ namespace ccr
 		std::string  testLabel;
 
 		ccr::Classification* c;
-		classifier->reset();
-		c = classifier->duplicateParameters();
+		classifiers[0]->reset();
+		c = classifiers[0]->duplicateParameters();
 		c->reset();
 
 		for (std::pair<std::string, std::vector<cv::Mat> > p : mapLabelToBoW)
@@ -963,13 +1123,146 @@ namespace ccr
 		delete ap;
 	}
 
+	void ActionRecognition::generateOutputMultiLabel(std::vector<cv::Mat_<float>> vecConfusionMat, std::vector<std::vector<float>**> vecConfusionMatScores)
+	{
+		std::vector<cv::Mat_<float>> vecOutput;
+		cv::FileStorage storage;
+		double meanAP = 0.0;
+		double meanACC = 0.0;
+		double stdDev = 0.0;
+		int numClassifiers = classifiers.size();
+
+		//Create output file
+		storage.open(outputFile, cv::FileStorage::WRITE);
+		if (storage.isOpened() == false)
+			std::cerr << "Invalid file storage!" << std::endl;
+
+		storage << "ActionRecognitionClassificationOutput" << "{";
+		for (int c = 0; c < numClassifiers; c++)
+		{
+			cv::Mat_<float> confusionMat = vecConfusionMat[c];
+			std::vector<float>** confusionMatScores = vecConfusionMatScores[c];
+			cv::Mat_<float> output;
+			int nLabels = classifiers[c]->retrieveClassIDs().size();
+
+			output.release();
+			output.create(cv::Size(8, nLabels)); //4 = TP, FP, FN, TN, precision, recall, specificity, accuracy per class
+			output = 0;
+			float precision, recall, specificity;
+			std::map<int, std::vector<float>> TPScores, FPScores, FNScores, TNScores; //first = class, second = scores
+
+			// TP - True Positive
+			for (int tp = 0; tp < nLabels; tp++)
+			{
+				output[tp][0] = confusionMat[tp][tp];
+				for (int score = 0; score < confusionMatScores[tp][tp].size(); score++)
+					TPScores[tp].push_back(confusionMatScores[tp][tp].at(score));
+			}
+
+			// FP - False Positive
+			for (int col = 0; col < nLabels; col++)
+			{
+				for (int row = 0; row < nLabels; row++)
+				{
+					output[col][1] += confusionMat[row][col];
+
+					if (col != row)
+						for (int score = 0; score < confusionMatScores[row][col].size(); score++)
+							FPScores[col].push_back(confusionMatScores[row][col].at(score));
+				}
+				output[col][1] -= output[col][0];
+			}
+
+			// FN - False Negative
+			for (int row = 0; row < nLabels; row++)
+			{
+				for (int col = 0; col < nLabels; col++)
+				{
+					output[row][2] += confusionMat[row][col];
+
+					if (col != row)
+						for (int score = 0; score < confusionMatScores[row][col].size(); score++)
+							FNScores[row].push_back(confusionMatScores[row][col].at(score));
+				}
+				output[row][2] -= output[row][0];
+			}
+
+			// TN - True Negative
+			cv::Scalar sum = cv::sum(confusionMat);
+			for (int tn = 0; tn < nLabels; tn++)
+				output[tn][3] = sum[0] - output[tn][0] - output[tn][1] - output[tn][2];
+
+			for (int l = 0; l < nLabels; l++)
+			{
+				precision = output[l][0] / (output[l][0] + output[l][1]);
+				output[l][4] = precision;
+				recall = output[l][0] / (output[l][0] + output[l][2]);
+				output[l][5] = recall;
+				specificity = output[l][3] / (output[l][3] + output[l][1]);
+				output[l][6] = specificity;
+				output[l][7] = (output[l][0] + output[l][3]) / (output[l][0] + output[l][1] + output[l][2] + output[l][3]); //accuracy per class
+			}
+
+			float *ap = new float[nLabels];
+			for (int label = 0; label < nLabels; label++)
+				ap[label] = averagePrecision(label, output[label][0], output[label][2], TPScores, FPScores);
+
+			meanAP += std::accumulate(ap, ap + nLabels, 0.0f);
+			meanACC += meanAccuracy(output.col(7));
+			stdDev += stdDeviation(output.col(7), meanACC);
+
+			vecOutput.push_back(output);
+		}
+
+		meanAP = meanAP / static_cast<double>(numClassifiers);
+		meanACC = meanACC / static_cast<double>(numClassifiers);
+		stdDev = stdDev / static_cast<double>(numClassifiers);
+
+		storage << "MeanAccuracy" << meanACC;
+		storage << "StandardDeviationACC" << stdDev;
+		storage << "MeanAveragePrecision" << meanAP;
+
+		std::vector<std::string> labelsName = retrieveLabelsNameOneAgainstAll();
+		for (int label = 0; label < numClassifiers; label++)
+		{
+			cv::Mat_<float> output = vecOutput[label];
+			std::stringstream classLabel;
+			classLabel << "Class" << label;
+			storage << classLabel.str() << "{";
+			storage << "Label" << labelsName[label];
+			storage << "TP" << output[0][0];
+			storage << "FP" << output[0][1];
+			storage << "FN" << output[0][2];
+			storage << "TN" << output[0][3];
+			storage << "precision" << output[0][4];
+			storage << "recall" << output[0][5];
+			storage << "specificity" << output[0][6];
+			storage << "accPerClass" << output[0][7];
+			//storage << "apPerClass" << ap[label];
+			storage << "}";
+		}
+		storage.release();
+
+		//delete ap;
+	}
+
 	std::vector<std::string> ActionRecognition::retrieveClassIds()
 	{
 		std::vector<std::string> ids;
-		classifier->reset();
+		//classifier[0]->reset(); ??????
 
 		for (auto& p : mapLabelToBoW)
 			ids.push_back(p.first);
+
+		return ids;
+	}
+
+	std::vector<std::string> ActionRecognition::retrieveLabelsNameOneAgainstAll()
+	{
+		std::vector<std::string> ids;
+
+		for (int i = 0; i < classifiers.size(); i++)
+			ids.push_back(classifiers[i]->retrieveClassIDs()[0]);
 
 		return ids;
 	}
