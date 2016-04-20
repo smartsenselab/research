@@ -156,7 +156,7 @@ namespace ccr
 		switch (classificationProtocol)
 		{
 		case ClassificationProtocol::Train:
-			//extractFeatures();
+			extractFeatures();
 			createDictionary2();
 			////loadDictionary();
 			extractBagOfWords();
@@ -166,7 +166,8 @@ namespace ccr
 		case ClassificationProtocol::Test:
 			//extractFeatures();
 			loadDictionary();
-			extractBagOfWords();
+			//extractBagOfWords();
+			loadBagOfWords(); ////
 			loadClassifierModel();
 			classification();
 			break;
@@ -381,6 +382,57 @@ namespace ccr
 
 			std::cout << " OK" << std::endl;
 			threads.clear();
+		}
+	}
+
+	void ActionRecognition::loadBagOfWords()
+	{
+		DIR *dir = 0;
+		std::string path;
+		std::string label;
+		cv::FileNode node, n1;
+		cv::Mat feature;
+
+		params["bowOutput"] >> path;
+		dir = opendir(path.c_str());
+
+		if (dir == 0) {
+			std::cerr << "Impossible to open directory." << std::endl;
+			exit(1);
+		}
+
+		mapLabelToBoW.clear();
+
+		struct dirent *featFile = 0;
+		while (featFile = readdir(dir))
+		{
+			std::string file = featFile->d_name;
+			if (featFile->d_type == isFile)
+			{
+				cv::FileStorage storageFeat;
+				std::string featurePath = path + "\\" + file;
+
+				// binary file
+				if (featurePath[featurePath.size() - 1] == 'n')
+				{
+					feature = matRead(featurePath, label);
+				}
+				else
+				{
+					//Loading feature
+					storageFeat.open(path + "\\" + file, cv::FileStorage::READ);
+					if (storageFeat.isOpened() == false)
+						std::cerr << "Invalid file storage " << (path + file + "!") << std::endl;
+
+					node = storageFeat.root();
+					n1 = node["ActionRecognitionFeatures"];
+					n1["Label"] >> label;
+					n1["Features"] >> feature;
+					storageFeat.release();
+				}
+
+				this->mapLabelToBoW[label].push_back(feature.clone());
+			}
 		}
 	}
 
@@ -1024,7 +1076,7 @@ namespace ccr
 		cv::FileStorage storage;
 		cv::Mat_<float> output;
 		output.release();
-		output.create(cv::Size(8, nLabels)); //4 = TP, FP, FN, TN, precision, recall, specificity, accuracy per class
+		output.create(cv::Size(9, nLabels)); //4 = TP, FP, FN, TN, precision, recall, specificity, accuracy per class, balanced accuracy per class 
 		output = 0;
 		float precision, recall, specificity;
 		std::map<int, std::vector<float>> TPScores, FPScores, FNScores, TNScores; //first = class, second = scores
@@ -1086,6 +1138,7 @@ namespace ccr
 			specificity = output[l][3] / (output[l][3] + output[l][1]);
 			output[l][6] = specificity;
 			output[l][7] = (output[l][0] + output[l][3]) / (output[l][0] + output[l][1] + output[l][2] + output[l][3]); //accuracy per class
+			output[l][8] = balancedAccuracy(output[l][0], output[l][1], output[l][2], output[l][3]); //balanced accuracy per class
 		}
 
 		float *ap = new float[nLabels];
@@ -1095,7 +1148,11 @@ namespace ccr
 		double meanAP = std::accumulate(ap, ap + nLabels, 0.0f);
 		double meanACC = meanAccuracy(output.col(7));
 		double stdDev = stdDeviation(output.col(7), meanACC);
+		double meanBalACC = meanAccuracy(output.col(8));
+		double stdDevBal = stdDeviation(output.col(8), meanBalACC);
 
+		storage << "MeanBalancedAccuracy" << meanBalACC;
+		storage << "StandardDeviationBalACC" << stdDevBal;
 		storage << "MeanAccuracy" << meanACC;
 		storage << "StandardDeviationACC" << stdDev;
 		storage << "MeanAveragePrecision" << meanAP;
@@ -1115,6 +1172,7 @@ namespace ccr
 			storage << "recall" << output[label][5];
 			storage << "specificity" << output[label][6];
 			storage << "accPerClass" << output[label][7];
+			storage << "accBalPerClass" << output[label][8];
 			storage << "apPerClass" << ap[label];
 			storage << "}";
 		}
@@ -1314,6 +1372,19 @@ namespace ccr
 		mean = (double)(sum / (list.size()));
 
 		return mean;
+	}
+
+	float balancedAccuracy(int TP, int FP, int FN, int TN)
+	{
+		float percentTP, percentFP, percentFN, percentTN;
+
+		percentTP = static_cast<float>(TP * 100.0) / static_cast<float>(TP + FN);
+		percentFN = 100.0 - percentTP;
+
+		percentFP = static_cast<float>(FP * 100.0) / static_cast<float>(TN + FP);
+		percentTN = 100.0 - percentFP;
+
+		return (percentTP + percentTN) / (percentTP + percentTN + percentFN + percentFP);
 	}
 
 	float averagePrecision(int label, int numTp, int numFn, std::map<int, std::vector<float>> TPScores, std::map<int, std::vector<float>> FPScores)

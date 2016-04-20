@@ -99,6 +99,7 @@ namespace ccr
 		void createBoW(cv::Mat bagOfWords, std::string featurePath);
 
 		void loadVideoFrames(cv::FileNodeIterator &inode);
+		void loadBagOfWords();
 		void createCuboids();
 		void saveFeature(std::string label, cv::Mat &features, std::string videoName);
 		void saveFeatureBinary(std::string label, cv::Mat &features, std::string videoName);
@@ -126,6 +127,7 @@ namespace ccr
 	double meanAccuracyOneAgainstAll(std::vector<cv::Mat_<float>> list);
 	double stdDeviation(cv::Mat_<float> list, double mean);
 	double stdDeviationOneAgainstAll(std::vector<cv::Mat_<float>> list, double mean);
+	float balancedAccuracy(int TP, int FP, int FN, int TN);
 	float averagePrecision(int label, int numTp, int numFn, std::map<int, std::vector<float>> TPScores, std::map<int, std::vector<float>> FPScores);
 }
 
