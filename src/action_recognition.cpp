@@ -124,8 +124,10 @@ namespace ccr
 		int movF = node["movementFilter"];
 		std::string tempS; node["temporalScales"] >> tempS;
 		std::vector<int> vec = splitTemporalScales(tempS, ',');
+		int aux = node["extractionType"];
+		ssig::ExtractionType extType = static_cast<ssig::ExtractionType>(aux);
 
-		desc = new ssig::OFCM(nBMag, nBAng, distMag, distAng, cubL, maxMag, logQ, static_cast<bool>(movF), vec);
+		desc = new ssig::OFCM(nBMag, nBAng, distMag, distAng, cubL, maxMag, logQ, static_cast<bool>(movF), vec, extType);
 
 
 		node = params["visualDictionayParams"];
@@ -164,16 +166,16 @@ namespace ccr
 			break;
 
 		case ClassificationProtocol::Test:
-			//extractFeatures();
+			extractFeatures();
 			loadDictionary();
-			//extractBagOfWords();
-			loadBagOfWords(); ////
+			extractBagOfWords();
+			////loadBagOfWords(); ////
 			loadClassifierModel();
 			classification();
 			break;
 
 		case ClassificationProtocol::LeaveOneOut:
-			//extractFeatures();
+			extractFeatures();
 			createDictionary();
 			extractBagOfWords();
 			leaveOneOut();
