@@ -1380,10 +1380,16 @@ namespace ccr
 	{
 		float percentTP, percentFP, percentFN, percentTN;
 
-		percentTP = static_cast<float>(TP * 100.0) / static_cast<float>(TP + FN);
+		if (TP == 0)
+			percentTP = 0.0;
+		else
+			percentTP = static_cast<float>(TP * 100.0) / static_cast<float>(TP + FN);
 		percentFN = 100.0 - percentTP;
 
-		percentFP = static_cast<float>(FP * 100.0) / static_cast<float>(TN + FP);
+		if (FP == 0)
+			percentFP = 0.0;
+		else
+			percentFP = static_cast<float>(FP * 100.0) / static_cast<float>(TN + FP);
 		percentTN = 100.0 - percentFP;
 
 		return (percentTP + percentTN) / (percentTP + percentTN + percentFN + percentFP);
