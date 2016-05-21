@@ -3,6 +3,7 @@
 namespace ccr
 {
 	ActionRecognition::ActionRecognition(std::string paramsPath) {
+		totalInitTime = GetTickCount();
 		//numExtractFeatures = 0;
 		this->params.open(paramsPath, cv::FileStorage::READ);
 		beforeProcess();
@@ -10,7 +11,6 @@ namespace ccr
 
 	ActionRecognition::~ActionRecognition() {
 		//clearNoLongerUseful();
-		params.release();
 		featuresProperties.clear();
 
 		if (this->desc != NULL)
@@ -31,6 +31,67 @@ namespace ccr
 		}
 		*/
 		deleteClassifiers();
+
+		//// TOTAL COMPUTATIONAL TIME
+		totalEndTime = GetTickCount();
+		totalTotalTime = totalEndTime - totalInitTime;
+
+		saveYmlTimes();
+		saveVideoTimes();
+		//// END OF TOTAL COMPUTATIONAL TIME
+
+		params.release();
+	}
+
+	void ActionRecognition::saveYmlTimes()
+	{
+		cv::FileStorage storage;
+		std::string path;
+		params["timesFile"] >> path;
+		double mean, stdev;
+		// Open modelFile
+		storage.open(path + ".yml", cv::FileStorage::WRITE);
+		if (storage.isOpened() == false)
+			std::cerr << "Invalid file storage!" << std::endl;
+
+		storage << "ComputationalTime" << "{";
+		storage << "TotalTime" << totalTotalTime;
+
+		meanAndStd(featExtractionTimes, mean, stdev);
+		storage << "FeatExtraction" << "{";
+		storage << "Mean" << mean;
+		storage << "StdDev" << stdev;
+		storage << "FeatExtraction" << "}";
+		meanAndStd(featIoTimes, mean, stdev);
+		storage << "FeatIO" << "{";
+		storage << "Mean" << mean;
+		storage << "StdDev" << stdev;
+		storage << "FeatIO" << "}";
+
+		meanAndStd(bowExtractionTimes, mean, stdev);
+		storage << "BoWExtraction" << "{";
+		storage << "Mean" << mean;
+		storage << "StdDev" << stdev;
+		storage << "BowExtraction" << "}";
+
+		storage.release();
+	}
+
+	void ActionRecognition::saveVideoTimes()
+	{
+		std::string outputFile;
+		params["timesFile"] >> outputFile;
+		outputFile = outputFile + "videoTimes.txt";
+		std::ofstream fout(outputFile.data());
+
+		fout << "FeatExtraction\tFeatIO\tBoWExtraction\tBowIO" << std::endl;
+		for (int i = 0; i < featExtractionTimes.size(); i++)
+		{
+			fout << featExtractionTimes[i] << "\t";
+			fout << featIoTimes[i] << "\t";
+			fout << bowExtractionTimes[i] << std::endl;
+		}
+		fout.close();
 	}
 
 	void ActionRecognition::deleteClassifiers()
@@ -114,18 +175,18 @@ namespace ccr
 
 
 		node = params["featureParams"];
-		int nBMag = node["nBinsMagnitude"];
-		int nBAng = node["nBinsAngle"];
-		int distMag = node["distanceMagnitude"];
-		int distAng = node["distanceAngle"];
-		int cubL = node["cuboidLength"];
-		float maxMag = node["maxMagnitude"];
-		int logQ = node["logQuantization"];
-		int movF = node["movementFilter"];
+		nBMag = node["nBinsMagnitude"];
+		nBAng = node["nBinsAngle"];
+		distMag = node["distanceMagnitude"];
+		distAng = node["distanceAngle"];
+		cubL = node["cuboidLength"];
+		maxMag = node["maxMagnitude"];
+		logQ = node["logQuantization"];
+		movF = node["movementFilter"];
 		std::string tempS; node["temporalScales"] >> tempS;
-		std::vector<int> vec = splitTemporalScales(tempS, ',');
+		vec = splitTemporalScales(tempS, ',');
 		int aux = node["extractionType"];
-		ssig::ExtractionType extType = static_cast<ssig::ExtractionType>(aux);
+		extType = static_cast<ssig::ExtractionType>(aux);
 
 		desc = new ssig::OFCM(nBMag, nBAng, distMag, distAng, cubL, maxMag, logQ, static_cast<bool>(movF), vec, extType);
 
@@ -158,26 +219,27 @@ namespace ccr
 		switch (classificationProtocol)
 		{
 		case ClassificationProtocol::Train:
-			extractFeatures();
+		{
+			extractFeaturesParallel();
 			createDictionary2();
-			////loadDictionary();
-			extractBagOfWords();
+			//loadDictionary();
+			extractBagOfWordsParallel();
 			learnClassificationModel();
 			break;
-
+		}
 		case ClassificationProtocol::Test:
-			extractFeatures();
+			extractFeaturesParallel();
 			loadDictionary();
-			extractBagOfWords();
+			extractBagOfWordsParallel();
 			////loadBagOfWords(); ////
 			loadClassifierModel();
 			classification();
 			break;
 
 		case ClassificationProtocol::LeaveOneOut:
-			extractFeatures();
+			extractFeaturesParallel();
 			createDictionary();
-			extractBagOfWords();
+			extractBagOfWordsParallel();
 			leaveOneOut();
 			break;
 
@@ -253,6 +315,89 @@ namespace ccr
 		cuboids.clear();
 		delete desc;
 		desc = NULL;
+	}
+
+	void ActionRecognition::extractFeaturesParallel()
+	{
+		cv::FileNode node;
+		cv::FileStorage videosStorage; // storageNumFeat;
+
+		videosStorage.open(videosYMLPath, cv::FileStorage::READ);
+		node = videosStorage["videos"];
+
+		std::cout << "\nExtracting features from:" << std::endl;
+
+		//for (inode = node.begin(); node.size()  inode != node.end(); ++inode) {
+		#pragma omp parallel for
+		for (int ii = 0; ii < node.size(); ++ii) {
+			cv::Mat output;
+			std::string videoName, label;
+			ssig::DescriptorTemporal *desc;
+			std::vector<cv::Mat> video;
+			std::vector<ssig::Cube> cuboids;
+			cv::FileNode inode = node[ii];
+			int initTime, endTime, totalTime;
+
+			videoName = (std::string) inode["dir"];
+			std::vector<std::string> split = splitString(videoName, '/');
+			videoName = splitString(split[split.size() - 1], '.')[0];
+			//std::cout << videoName << " ";
+			printf("%s\n", videoName.c_str());
+
+			video.clear();
+			loadVideoFrames(inode, video);
+			label = inode["objID"].isNone() ? "" : (std::string)inode["objID"];
+
+			cuboids.clear();
+			createCuboids(cuboids, video);
+
+			//// COMPUTATING TIME FOR FEATURE EXTRACTION
+			initTime = GetTickCount();
+			desc = new ssig::OFCM(nBMag, nBAng, distMag, distAng, cubL, maxMag, logQ, static_cast<bool>(movF), vec, extType);
+			desc->setData(video);
+			desc->extract(cuboids, output);
+			endTime = GetTickCount();
+			totalTime = endTime - initTime;
+			#pragma omp critical
+			{
+				featExtractionTimes.push_back(totalTime);
+			}
+			//std::cout << "Processing time: " << totalTime << " ms" << std::endl;
+			//// END OF COMPUTATING TIME FOR FEATURE EXTRACTION
+
+			FeatureIndex fi(getFileName(videoName, params), label, output.rows, output.cols, 0); // 0 is  a dummy number
+			#pragma omp critical
+			{
+				featuresProperties.push_back(fi);
+			}
+
+			desc->release();
+
+			if (saveBinaryFile)
+				saveFeatureBinary(label, output, videoName);
+			else
+			{
+				//// COMPUTATING TIME FOR IO
+				initTime = GetTickCount();
+				saveFeature(label, output, videoName);
+				endTime = GetTickCount();
+				totalTime = endTime - initTime;
+				#pragma omp critical
+				{
+					featIoTimes.push_back(totalTime);
+				}
+				//std::cout << "Processing time: " << totalTime << " ms" << std::endl;
+				//// END OF COMPUTATING TIME FOR IO
+			}
+
+			output.release();
+			video.clear();
+			cuboids.clear();
+			delete desc;
+			desc = NULL;
+		}
+		videosStorage.release();
+		std::cout << std::endl;
 	}
 
 	void ActionRecognition::createDictionary()
@@ -331,7 +476,7 @@ namespace ccr
 		storage.release();
 	}
 
-	void ActionRecognition::extractBagOfWords()
+	void ActionRecognition::extractBagOfWordsStdThread()
 	{
 		int numVideos = 0;
 		int v = 0;
@@ -385,6 +530,56 @@ namespace ccr
 			std::cout << " OK" << std::endl;
 			threads.clear();
 		}
+	}
+
+	void ActionRecognition::extractBagOfWordsParallel()
+	{
+		int numVideos = 0;
+		int v = 0;
+		std::vector<std::thread> threads;
+
+		if (featuresProperties.size() == 0)
+			fillFeaturesProperties();
+
+		numVideos = static_cast<int>(featuresProperties.size());
+		std::cout << "Extracting Bag of Words for videos:" << std::endl;
+
+		#pragma omp parallel for
+		for (int v = 0; v < numVideos; v++)
+		{
+			int initTime, endTime, totalTime;
+			//std::cout << v << " ";
+			std::string videoName = featuresProperties[v].path;
+			std::vector<std::string> split = splitString(videoName, '/');
+			videoName = splitString(split[split.size() - 1], '.')[0];
+			printf("%s\n", videoName.c_str());
+
+			cv::Mat bow;
+			bow.release();
+			initTime = GetTickCount();
+			bow.create(1, dict->getnCWs(), CV_32F);
+			bow = 0;
+			createBoW(bow, featuresProperties[v].path);
+			endTime = GetTickCount();
+			totalTime = endTime - initTime;
+			#pragma omp critical
+			{
+				bowExtractionTimes.push_back(totalTime);
+			}
+
+			std::vector<std::string> multiLabel = splitString(featuresProperties[v].label, ',');
+			for (std::string &label : multiLabel)
+			{
+				#pragma omp critical
+				{
+					this->mapLabelToBoW[label].push_back(bow);
+				}
+				std::vector<std::string> videoName = splitString(featuresProperties[v].path, '\\');
+				videoName = splitString(videoName[videoName.size() - 1], '.');
+				saveBoW(label, bow, videoName[0]);
+			}
+		}
+		std::cout << std::endl;
 	}
 
 	void ActionRecognition::loadBagOfWords()
@@ -672,6 +867,19 @@ namespace ccr
 					cuboids.push_back(ssig::Cube(x, y, t, samplingSetup.sampleX, samplingSetup.sampleY, samplingSetup.sampleL));
 	}
 
+	void ActionRecognition::createCuboids(std::vector<ssig::Cube> &cuboids, std::vector<cv::Mat> &video)
+	{
+		cuboids.clear();
+
+		int videoHeight = video[0].rows;
+		int videoWidth = video[0].cols;
+
+		for (int t = 0; t <= static_cast<int>(0 + video.size() - samplingSetup.sampleL); t += samplingSetup.strideL)
+			for (int y = 0; y <= static_cast<int>(0 + videoHeight - samplingSetup.sampleY); y += samplingSetup.strideY)
+				for (int x = 0; x <= static_cast<int>(0 + videoWidth - samplingSetup.sampleX); x += samplingSetup.strideX)
+					cuboids.push_back(ssig::Cube(x, y, t, samplingSetup.sampleX, samplingSetup.sampleY, samplingSetup.sampleL));
+	}
+
 	void ActionRecognition::loadVideoFrames(cv::FileNodeIterator &inode)
 	{
 		int step, nSamples = 0;
@@ -703,6 +911,45 @@ namespace ccr
 			capture.set(CV_CAP_PROP_POS_FRAMES, frameStep);
 			capture.read((image));
 			
+			if (image.empty())
+				std::cerr << "Error processing file. Can't read frame " << frameStep << " from video " << path << std::endl;
+			else
+				video.push_back(image.clone());
+		}
+
+	}
+
+	void ActionRecognition::loadVideoFrames(cv::FileNode &inode, std::vector<cv::Mat> &video)
+	{
+		int step, nSamples = 0;
+		unsigned long int videoLength;
+		std::string path;
+		cv::VideoCapture capture;
+		cv::Mat image;
+
+		video.clear();
+
+		// load video
+		path = (std::string) inode["dir"];
+
+		// check video loaded
+		capture.open(path);
+		if (!capture.isOpened())
+			std::cerr << "Error processing file. Can't read video " << path << std::endl;
+
+		videoLength = static_cast<unsigned long>(capture.get(CV_CAP_PROP_FRAME_COUNT));
+		nSamples = inode["nSamples"].isNone() ? 0 : (int)inode["nSamples"];
+
+		if (nSamples > 0)
+			step = (int)(videoLength / nSamples); // generate step based on the number of samples
+		else
+			step = inode["step"].isNone() ? 1 : (int)inode["step"]; // load step
+
+		for (unsigned long int frameStep = 0; frameStep < videoLength; frameStep += step)
+		{
+			capture.set(CV_CAP_PROP_POS_FRAMES, frameStep);
+			capture.read((image));
+
 			if (image.empty())
 				std::cerr << "Error processing file. Can't read frame " << frameStep << " from video " << path << std::endl;
 			else
@@ -1543,5 +1790,17 @@ namespace ccr
 		}
 
 		return internal;
+	}
+
+	void meanAndStd(std::vector<int> v, double &mean, double &stdev)
+	{
+		double sum = static_cast<double>(std::accumulate(v.begin(), v.end(), 0.0));
+		mean = sum / static_cast<double>(v.size());
+
+		std::vector<double> diff(v.size());
+		std::transform(v.begin(), v.end(), diff.begin(), std::bind2nd(std::minus<double>(), mean));
+
+		double sq_sum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
+		stdev = std::sqrt(sq_sum / static_cast<double>(v.size()));
 	}
 }

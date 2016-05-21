@@ -14,6 +14,7 @@
 #include "svm_multiclass.hpp"
 
 #include <dirent.h>
+#include <windows.h>
 
 namespace ccr
 {
@@ -68,7 +69,25 @@ namespace ccr
 		//ccr::Classification *classifier;
 		int saveBinaryFile = 0;
 
+		//Descriptor paramenters
+		int nBMag;
+		int nBAng;
+		int distMag;
+		int distAng;
+		int cubL;
+		float maxMag;
+		int logQ;
+		int movF;
+		std::vector<int> vec;
+		ssig::ExtractionType extType;
+
+		long totalInitTime, totalEndTime, totalTotalTime;
+
 	public:
+
+		std::vector<int> featExtractionTimes, featIoTimes, bowExtractionTimes;
+		void saveYmlTimes();
+		void saveVideoTimes();
 
 		cv::FileStorage params;
 
@@ -77,9 +96,11 @@ namespace ccr
 		void execute();
 		void beforeProcess();
 		void extractFeatures();
+		void extractFeaturesParallel();
 		void createDictionary();
 		void createDictionary2();
-		void extractBagOfWords();
+		void extractBagOfWordsParallel();
+		void extractBagOfWordsStdThread();
 		void learnClassificationModel();
 		void learnOneAgainstOneClassification();
 		void learnOneAgainstAllClassification();
@@ -99,8 +120,10 @@ namespace ccr
 		void createBoW(cv::Mat bagOfWords, std::string featurePath);
 
 		void loadVideoFrames(cv::FileNodeIterator &inode);
+		void loadVideoFrames(cv::FileNode &inode, std::vector<cv::Mat> &video);
 		void loadBagOfWords();
 		void createCuboids();
+		void createCuboids(std::vector<ssig::Cube> &cuboids, std::vector<cv::Mat> &video);
 		void saveFeature(std::string label, cv::Mat &features, std::string videoName);
 		void saveFeatureBinary(std::string label, cv::Mat &features, std::string videoName);
 		void saveBoW(std::string label, cv::Mat &features, std::string videoName);
@@ -129,6 +152,7 @@ namespace ccr
 	double stdDeviationOneAgainstAll(std::vector<cv::Mat_<float>> list, double mean);
 	float balancedAccuracy(int TP, int FP, int FN, int TN);
 	float averagePrecision(int label, int numTp, int numFn, std::map<int, std::vector<float>> TPScores, std::map<int, std::vector<float>> FPScores);
+	void meanAndStd(std::vector<int> v, double &mean, double &stdev);
 }
 
 #endif
