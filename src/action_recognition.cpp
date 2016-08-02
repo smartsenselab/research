@@ -237,9 +237,11 @@ namespace ccr
 			break;
 
 		case ClassificationProtocol::LeaveOneOut:
-			extractFeaturesParallel();
-			createDictionary();
-			extractBagOfWordsParallel();
+			//extractFeaturesParallel();
+			//createDictionary2();
+			//loadDictionary();//
+			//extractBagOfWordsParallel();
+			loadBagOfWords();
 			leaveOneOut();
 			break;
 
@@ -575,8 +577,9 @@ namespace ccr
 					this->mapLabelToBoW[label].push_back(bow);
 				}
 				std::vector<std::string> videoName = splitString(featuresProperties[v].path, '\\');
-				videoName = splitString(videoName[videoName.size() - 1], '.');
-				saveBoW(label, bow, videoName[0]);
+				//videoName = splitString(videoName[videoName.size() - 1], '.');
+				std::string vN = videoName[videoName.size() - 1].substr(0, videoName[videoName.size() - 1].size() - 4);
+				saveBoW(label, bow, vN);
 			}
 		}
 		std::cout << std::endl;
@@ -599,6 +602,7 @@ namespace ccr
 		}
 
 		mapLabelToBoW.clear();
+		mapLabelToPath.clear();
 
 		struct dirent *featFile = 0;
 		while (featFile = readdir(dir))
@@ -629,6 +633,7 @@ namespace ccr
 				}
 
 				this->mapLabelToBoW[label].push_back(feature.clone());
+				this->mapLabelToPath[label].push_back(file);
 			}
 		}
 	}
@@ -1223,7 +1228,7 @@ namespace ccr
 
 		std::ofstream class_report;
 		class_report.open("class_report.txt", std::ofstream::out | std::ofstream::trunc); //std::ofstream::app
-		class_report << "realClass\tpredictedClass\tresp" << std::endl;
+		class_report << "pathName\trealClass\tpredictedClass\tresp" << std::endl;
 		std::cout << ".";
 
 		if (featuresProperties.size() == 0)
@@ -1255,7 +1260,7 @@ namespace ccr
 			{
 				confusionMat[cr.realClass][cr.predictedClass]++;
 				confusionMatScores[cr.realClass][cr.predictedClass].push_back(cr.resp);
-				class_report << cr.realClass << "\t" << cr.predictedClass << "\t" << cr.resp << std::endl;
+				class_report << cr.pathName << "\t"  << cr.realClass << "\t" << cr.predictedClass << "\t" << cr.resp << std::endl;
 			}
 
 			threads.clear();
@@ -1285,6 +1290,7 @@ namespace ccr
 		int j = 0;
 		cv::Mat_<float> testData;
 		std::string  testLabel;
+		std::string pathName;
 
 		ccr::Classification* c;
 		classifiers[0]->reset();
@@ -1293,10 +1299,16 @@ namespace ccr
 
 		for (std::pair<std::string, std::vector<cv::Mat> > p : mapLabelToBoW)
 		{
+			// GAMBIARRA PARA FUNCIONAR NO HarHealth Demo 1
+			int v = 0;
+			std::vector <std::string> vecPathNames = mapLabelToPath[p.first];
+			///////////////////////////////////////////////////////////////////////
+
 			for (cv::Mat_<float> trainData : p.second)
 			{
 				if (cr->i == j)
 				{
+					pathName = vecPathNames[v];
 					testData = trainData;
 					testLabel = p.first;
 					j++;
@@ -1306,6 +1318,7 @@ namespace ccr
 					c->addSamples(trainData, p.first);
 					j++;
 				}
+				v++;
 			}
 		}
 
@@ -1316,6 +1329,7 @@ namespace ccr
 		c->predict(testData, responses);
 		cr->predictedClass = responses[0][0];
 		cr->resp = responses[0][1];
+		cr->pathName = pathName;
 
 		delete c;
 	}

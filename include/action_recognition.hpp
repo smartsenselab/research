@@ -48,6 +48,7 @@ namespace ccr
 		int realClass;
 		int predictedClass;
 		float resp;
+		std::string pathName;
 	};
 
 	class ActionRecognition {
@@ -63,6 +64,7 @@ namespace ccr
 		std::vector<ssig::Cube> cuboids;
 		std::vector<FeatureIndex> featuresProperties;
 		std::map<std::string, std::vector<cv::Mat>> mapLabelToBoW;
+		std::map<std::string, std::vector<std::string>> mapLabelToPath;
 		ssig::DescriptorTemporal *desc;
 		ccr::VisualDictionary *dict;
 		std::vector<ccr::Classification*> classifiers;
