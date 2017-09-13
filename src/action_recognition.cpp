@@ -221,10 +221,10 @@ namespace ccr
 		case ClassificationProtocol::Train:
 		{
 			extractFeaturesParallel();
-			createDictionary2();
+			//createDictionary2();
 			//loadDictionary();
-			extractBagOfWordsParallel();
-			learnClassificationModel();
+			//extractBagOfWordsParallel();
+			//learnClassificationModel();
 			break;
 		}
 		case ClassificationProtocol::Test:
