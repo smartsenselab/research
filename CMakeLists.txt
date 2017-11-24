@@ -23,4 +23,4 @@ add_executable(${PROJECT_ACRONYM_STR} ${RESEARCH_FILES})
 target_include_directories(${PROJECT_ACRONYM_STR} PUBLIC ${PROJECT_SOURCE_DIR}/include/)
 
 #SELECT THE SSIGLIB MODULES
-target_link_libraries(${PROJECT_ACRONYM_STR} core ml)
+target_link_libraries(${PROJECT_ACRONYM_STR} core ml descriptors)
